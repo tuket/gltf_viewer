@@ -16,7 +16,7 @@ add_library(imgui STATIC
 
 target_include_directories(imgui PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
-target_link_libraries(imgui glfw glad)
+target_link_libraries(imgui glfw glad glm)
 
 add_executable(imgui_example imgui_example_glfw_opengl3.cpp)
 target_link_libraries(imgui_example imgui)

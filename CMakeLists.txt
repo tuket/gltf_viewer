@@ -29,6 +29,8 @@ add_subdirectory(libs/tl)
 
 set(SOURCES
     main.cpp
+    scene.hpp scene.cpp
+    utils.hpp utils.cpp
 )
 PREPEND(SOURCES "src/" ${SOURCES})
 

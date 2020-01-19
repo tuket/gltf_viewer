@@ -52,8 +52,10 @@ void toStringBufferT(FmtBuffer& buffer, const Fmt_int& fmtInt)
         buffer.writeAndAdvance('-');
         neg = 1;
     }
-    if(x == 0)
+    if(x == 0) {
         buffer.writeAndAdvance('0');
+        return;
+    }
     const u32 len = calcToStringLengthT(fmtInt);
     for(int i = len-1; x; x /= base, i--) {
         const u64 s = x % base;

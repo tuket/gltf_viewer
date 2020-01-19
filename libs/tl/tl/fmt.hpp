@@ -3,6 +3,7 @@
 #include "str.hpp"
 #include <stdio.h>
 #include <string.h>
+#include <tl/carray.hpp>
 
 namespace tl
 {
@@ -195,23 +196,11 @@ static void toFmtBuffer(FmtBuffer& buffer, const T& x, const Ts&... xs)
 }
 
 template <typename T, typename... Ts>
-static void toStringBuffer(char* buffer, int bufferSize, const T& x, const Ts&... xs)
+static void toStringBuffer(tl::Array<char> buffer, const T& x, const Ts&... xs)
 {
-    FmtBuffer buf(buffer, bufferSize);
+    FmtBuffer buf(buffer.begin(), buffer.size());
     fmtBufferAppend(buf, x, xs...);
     buf.addNullTerminator();
-}
-
-/*template <typename T, typename... Ts>
-static void toStringBuffer(tl::Buffer& buffer, const T& x, const Ts&... xs)
-{
-    toStringBuffer(buffer.data(), buffer.size(), x, xs...);
-}*/
-
-template <int BUF_SIZE, typename T, typename... Ts>
-static void toStringBuffer(char (&buffer)[BUF_SIZE], const T& x, const Ts&... xs)
-{
-    toStringBuffer(&buffer[0], BUF_SIZE, x, xs...);
 }
 
 template<typename... T>
