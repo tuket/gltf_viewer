@@ -24,6 +24,7 @@ set(HEADERS
 	type_traits/type_index.hpp
 	containers/array.hpp
 	containers/vector.hpp
+	containers/fvector.hpp
 	containers/hash_map.hpp
 	containers/tuple.hpp
 	hash/hash.hpp
