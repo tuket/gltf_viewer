@@ -28,6 +28,7 @@ static cgltf_node* selectedNode = nullptr;
 constexpr size_t MAX_BUFFER_OBJS = 256;
 constexpr size_t MAX_VERT_ARRAYS = 128;
 constexpr size_t MAX_TEXTURES = 128;
+constexpr size_t MAX_MATERIALS = 128;
 
 // scene gpu resources
 namespace gpu
@@ -45,6 +46,8 @@ const float DEFAULT_IMGUI_IMG_HEIGHT = 128.f;
 namespace imgui_state
 {
 static float textureHeights[MAX_TEXTURES];
+struct MaterialTexturesHeights { float color; float metallicRoughness; };
+static MaterialTexturesHeights materialTexturesHeights[MAX_MATERIALS];
 }
 
 void freeSceneGpuResources()
@@ -57,11 +60,38 @@ void freeSceneGpuResources()
 
 i32 selectedSceneInd = 0;
 
-size_t getBufferInd(cgltf_buffer* buffer) {
+size_t getBufferInd(const cgltf_buffer* buffer) {
     return (size_t)(buffer - parsedData->buffers);
 }
-size_t getBufferViewInd(cgltf_buffer_view* view) {
+size_t getBufferViewInd(const cgltf_buffer_view* view) {
     return (size_t)(view - parsedData->buffer_views);
+}
+size_t getTextureInd(const cgltf_texture* tex) {
+    return (size_t)(tex - parsedData->textures);
+}
+
+void imguiTexture(size_t textureInd, float* height)
+{
+    const size_t i = textureInd;
+    const float aspectRatio = (float)gpu::textureSizes[i].x / gpu::textureSizes->y;
+    ImGui::SliderFloat("Scale", height, MIN_IMGUI_IMG_HEIGHT, gpu::textureSizes[i].y, "%.0f");
+    ImGui::Image((void*)(u64)gpu::textures[i], {*height * aspectRatio, *height});
+}
+
+void imguiTextureView(const cgltf_texture_view& view, float* height)
+{
+    ImGui::Text("Scale: %f", view.scale);
+    if(view.has_transform)
+    if(ImGui::TreeNode("Transform")) {
+        auto& tr = view.transform;
+        ImGui::Text("Offset: {%f, %f}", tr.offset[0], tr.offset[1]);
+        ImGui::Text("Scale: {%f, %f}", tr.scale[0], tr.scale[1]);
+        ImGui::Text("Rotation: %f", tr.rotation);
+        ImGui::Text("Texcoord index: %d", tr.texcoord);
+    }
+    ImGui::Text("Texcoord index: %d", view.texcoord);
+    imguiTexture(getTextureInd(view.texture), height);
+    cgltf_texture* texture;
 }
 
 void drawScene()
@@ -202,10 +232,7 @@ void drawGui_texturesTab()
             ImGui::Text("File path: %s", texture.image->uri);
             ImGui::Text("MIME Type: %s", texture.image->mime_type);
             ImGui::Text("Size: %dx%d", gpu::textureSizes[i].x, gpu::textureSizes[i].y);
-            const float aspectRatio = (float)gpu::textureSizes[i].x / gpu::textureSizes->y;
-            float& imguiH = imgui_state::textureHeights[i];
-            ImGui::SliderFloat("Scale", &imguiH, MIN_IMGUI_IMG_HEIGHT, gpu::textureSizes[i].y, "%.0f");
-            ImGui::Image((void*)(u64)gpu::textures[i], {imguiH * aspectRatio, imguiH});
+            imguiTexture(i, &imgui_state::textureHeights[i]);
             // TODO
             /*if(ImGui::BeginPopupContextItem("right-click"))
             {
@@ -323,6 +350,49 @@ void drawGui_accessorsTab()
     }
 }
 
+void drawGui_materialsTab()
+{
+    CArray<cgltf_material> materials(parsedData->materials, parsedData->materials_count);
+    for(size_t i = 0; i < materials.size(); i++)
+    {
+        const cgltf_material& material = materials[i];
+        tl::toStringBuffer(scratchStr, i, ") ", material.name ? material.name : "");
+        if(ImGui::CollapsingHeader(scratchStr))
+        {
+            ImGui::TreePush();
+            if(material.has_pbr_metallic_roughness)
+            if(ImGui::TreeNode("PBR Metallic-Roughness"))
+            {
+                const auto& props = material.pbr_metallic_roughness;
+                const auto& colorFactor = props.base_color_factor;
+                ImGui::Text("Base color factor: {%f, %f, %f, %f}", colorFactor[0], colorFactor[1], colorFactor[2], colorFactor[3]);
+                ImGui::Text("Metallic factor: %f", props.metallic_factor);
+                ImGui::Text("Roughness factor: %f", props.roughness_factor);
+                if(props.base_color_texture.texture)
+                {
+                    const size_t texInd = getTextureInd(props.base_color_texture.texture);
+                    tl::toStringBuffer(scratchStr, "Color texture: ", i, " - ", gpu::textureSizes[texInd].x, "x", gpu::textureSizes[texInd].y);
+                    if(ImGui::TreeNode(scratchStr)) {
+                        imguiTextureView(props.base_color_texture, &imgui_state::materialTexturesHeights[i].color);
+                        ImGui::TreePop();
+                    }
+                }
+                if(props.metallic_roughness_texture.texture)
+                {
+                    const size_t texInd = getTextureInd(props.metallic_roughness_texture.texture);
+                    tl::toStringBuffer(scratchStr, "Metallic-roughness texture: ", i, " - ", gpu::textureSizes[texInd].x, "x", gpu::textureSizes[texInd].y);
+                    if(ImGui::TreeNode(scratchStr)) {
+                        imguiTextureView(props.metallic_roughness_texture, &imgui_state::materialTexturesHeights[i].metallicRoughness);
+                        ImGui::TreePop();
+                    }
+                }
+                ImGui::TreePop();
+            }
+            ImGui::TreePop();
+        }
+    }
+}
+
 void drawGui()
 {
     if(!parsedData) {
@@ -360,6 +430,10 @@ void drawGui()
         }
         if(ImGui::BeginTabItem("Accessors")) {
             drawGui_accessorsTab();
+            ImGui::EndTabItem();
+        }
+        if(ImGui::BeginTabItem("Materials")) {
+            drawGui_materialsTab();
             ImGui::EndTabItem();
         }
         ImGui::EndTabBar();
@@ -411,6 +485,15 @@ void loadBufferObjects()
     }
 }
 
+void loadMaterials()
+{
+    CArray<cgltf_material> materials (parsedData->materials, parsedData->materials_count);
+    for(size_t i = 0; i < materials.size(); i++)
+    {
+        imgui_state::materialTexturesHeights[i] = {128.f, 128.f};
+    }
+}
+
 bool loadGltf(const char* path)
 {
     openedFilePath = path;
@@ -430,6 +513,7 @@ bool loadGltf(const char* path)
             }
         loadTextures();
         loadBufferObjects();
+        loadMaterials();
         return true;
     }
     fprintf(stderr, "error loading\n");
