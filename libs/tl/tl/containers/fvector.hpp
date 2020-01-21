@@ -3,6 +3,7 @@
 #include <tl/int_types.hpp>
 #include <tl/move.hpp>
 #include <initializer_list>
+#include <new>
 #include <assert.h>
 
 namespace tl
@@ -18,10 +19,10 @@ public:
     T& operator[](size_t i);
     const T& operator[](size_t i)const;
 
-    T* begin() { return _data; }
-    const T* begin()const { return _data; }
-    T* end() { return _data + _size; }
-    const T* end()const { return _data + _size; }
+    T* begin() { return (T*)_data; }
+    const T* begin()const { return (T*)_data; }
+    T* end() { return (T*)_data + _size; }
+    const T* end()const { return (T*)_data + _size; }
 
     size_t size()const { return _size; }
     constexpr size_t capacity()const { return N; }
@@ -79,7 +80,7 @@ void FVector<T, N>::push_back(T&& x) {
 
 template <typename T, size_t N>
 void FVector<T, N>::pop_back() {
-    asert(_size > 0);
+    assert(_size > 0);
     _destroy(_size);
     _size--;
 }
