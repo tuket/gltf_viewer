@@ -69,6 +69,12 @@ size_t getBufferViewInd(const cgltf_buffer_view* view) {
 size_t getTextureInd(const cgltf_texture* tex) {
     return (size_t)(tex - parsedData->textures);
 }
+size_t getNodeInd(const cgltf_node* node) {
+    return (size_t)(node - parsedData->nodes);
+}
+size_t getImageInd(const cgltf_image* image) {
+    return (size_t)(image - parsedData->images);
+}
 
 void imguiTexture(size_t textureInd, float* height)
 {
@@ -220,29 +226,76 @@ void drawGui_meshesTab()
 
 void drawGui_texturesTab()
 {
+    auto showSamplerData = [](const cgltf_sampler& sampler)
+    {
+        ImGui::Text("Min filter: %s", glMinFilterModeStr(sampler.min_filter));
+        ImGui::Text("Mag filter: %s", glMinFilterModeStr(sampler.mag_filter));
+        ImGui::Text("Wrap mode S: %s", glTextureWrapModeStr(sampler.wrap_s));
+        ImGui::Text("Wrap mode T: %s", glTextureWrapModeStr(sampler.wrap_t));
+    };
+    auto showImage = [](const cgltf_image& image)
+    {
+        size_t i = getImageInd(&image);
+        ImGui::Text("Name: %s", image.name);
+        ImGui::Text("File path: %s", image.uri);
+        ImGui::Text("MIME Type: %s", image.mime_type);
+        ImGui::Text("Size: %dx%d", gpu::textureSizes[i].x, gpu::textureSizes[i].y);
+        imguiTexture(i, &imgui_state::textureHeights[i]);
+        // TODO
+        /*if(ImGui::BeginPopupContextItem("right-click"))
+        {
+            if(ImGui::Selectable("copy")) {
+
+            }
+            ImGui::EndPopup();
+        }*/
+    };
     tl::CArray<cgltf_texture> textures(parsedData->textures, parsedData->textures_count);
+    tl::toStringBuffer(scratchStr, "Textures (", textures.size(), ")");
+    if(ImGui::CollapsingHeader(scratchStr))
     for(size_t i = 0; i < textures.size(); i++)
     {
         auto& texture = textures[i];
         tl::toStringBuffer(scratchStr, i, ") ", texture.name ? texture.name : "");
-        if(ImGui::CollapsingHeader(scratchStr))
+        if(ImGui::TreeNode((void*)&texture, "%s", scratchStr))
         {
-            ImGui::TreePush();
-            ImGui::Text("Name: %s", texture.image->name);
-            ImGui::Text("File path: %s", texture.image->uri);
-            ImGui::Text("MIME Type: %s", texture.image->mime_type);
-            ImGui::Text("Size: %dx%d", gpu::textureSizes[i].x, gpu::textureSizes[i].y);
-            imguiTexture(i, &imgui_state::textureHeights[i]);
-            // TODO
-            /*if(ImGui::BeginPopupContextItem("right-click"))
+            if(texture.image == nullptr) {
+                ImGui::Text("image: (null)");
+            }
+            else if(ImGui::TreeNode((void*)&texture.image, "image")) {
+                showImage(*texture.image);
+                ImGui::TreePop();
+            }
+            if(texture.sampler == nullptr) {
+                ImGui::Text("sampler: (null)");
+            }
+            else if(ImGui::TreeNode((void*)&texture.sampler, "sampler"))
             {
-                if(ImGui::Selectable("copy")) {
-
-                }
-                ImGui::EndPopup();
-            }*/
+                showSamplerData(*texture.sampler);
+                ImGui::TreePop();
+            }
             ImGui::TreePop();
         }
+    }
+
+    tl::CArray<cgltf_image> images(parsedData->images, parsedData->images_count);
+    tl::toStringBuffer(scratchStr, "Images (", images.size(), ")");
+    if(ImGui::CollapsingHeader(scratchStr))
+    for(size_t i = 0; i < images.size(); i++)
+    if(ImGui::TreeNode((void*)&images[i], "%ld", i))
+    {
+        showImage(images[i]);
+        ImGui::TreePop();
+    }
+
+    tl::CArray<cgltf_sampler> samplers(parsedData->samplers, parsedData->samplers_count);
+    tl::toStringBuffer(scratchStr, "Samplers (", samplers.size(), ")");
+    if(ImGui::CollapsingHeader(scratchStr))
+    for(size_t i = 0; i < samplers.size(); i++)
+    if(ImGui::TreeNode((void*)&samplers[i], "%ld", i))
+    {
+        showSamplerData(samplers[i]);
+        ImGui::TreePop();
     }
 }
 
@@ -393,6 +446,52 @@ void drawGui_materialsTab()
     }
 }
 
+void drawGui_skins()
+{
+    CArray<cgltf_skin> skins(parsedData->skins, parsedData->skins_count);
+    for(size_t i = 0; i < skins.size(); i++)
+    {
+        auto& skin = skins[i];
+        if(ImGui::TreeNode(&skin, "%ld) %s", i, skin.name ? skin.name : ""))
+        {
+            CArray<cgltf_node*> joints(skin.joints, skin.joints_count);
+            if(ImGui::TreeNode((void*)skin.joints, "joints(%ld)", joints.size()))
+            {
+                for(size_t j = 0; j < joints.size(); j++)
+                {
+                    auto joint = joints[j];
+                    if(joint == skin.skeleton)
+                        ImGui::PushStyleColor(ImGuiCol_Text, 0xFF0000FF);
+                    ImGui::Text("%ld) Node -> %ld) %s", j, getNodeInd(joint), (joint->name ? joint->name : ""));
+                    if(joint == skin.skeleton)
+                        ImGui::PopStyleColor();
+                }
+                ImGui::TreePop();
+            }
+            ImGui::TreePop();
+        }
+    }
+}
+
+void drawGui_samplers()
+{
+    CArray<cgltf_sampler> samplers (parsedData->samplers, parsedData->samplers_count);
+    for(size_t i = 0; i < samplers.size(); i++)
+    {
+        tl::toStringBuffer(scratchStr, i);
+        if(ImGui::CollapsingHeader(scratchStr))
+        {
+            ImGui::TreePush();
+            const cgltf_sampler& sampler = samplers[i];
+            ImGui::Text("Min filter: %s", glMinFilterModeStr(sampler.min_filter));
+            ImGui::Text("Mag filter: %s", glMinFilterModeStr(sampler.mag_filter));
+            ImGui::Text("Wrap mode S: %s", glTextureWrapModeStr(sampler.wrap_s));
+            ImGui::Text("Wrap mode T: %s", glTextureWrapModeStr(sampler.wrap_t));
+            ImGui::TreePop();
+        }
+    }
+}
+
 void drawGui()
 {
     if(!parsedData) {
@@ -434,6 +533,10 @@ void drawGui()
         }
         if(ImGui::BeginTabItem("Materials")) {
             drawGui_materialsTab();
+            ImGui::EndTabItem();
+        }
+        if(ImGui::BeginTabItem("Skins")) {
+            drawGui_skins();
             ImGui::EndTabItem();
         }
         ImGui::EndTabBar();

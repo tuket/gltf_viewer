@@ -4,6 +4,7 @@
 #include <imgui.h>
 #include <imgui_internal.h>
 #include <tl/basic.hpp>
+#include <glad/glad.h>
 
 bool Splitter(bool split_vertically, float thickness, float* size1, float* size2, float min_size1, float min_size2, float splitter_long_axis_size)
 {
@@ -37,3 +38,48 @@ CStr cgltfPrimitiveTypeStr(cgltf_primitive_type type)
     assert(i < size(strs));
     return strs[i];
 }
+
+const char* glMinFilterModeStr(int minFilterMode)
+{
+    switch(minFilterMode) {
+        case GL_NEAREST: return "nearest pixel";
+        case GL_LINEAR: return "linear pixel";
+        case GL_NEAREST_MIPMAP_NEAREST: return "nearest pixel, nearest mipmap";
+        case GL_LINEAR_MIPMAP_NEAREST: return "linear pixel, nearest mipmap";
+        case GL_NEAREST_MIPMAP_LINEAR: return "nearest pixel, linear mipmap";
+        case GL_LINEAR_MIPMAP_LINEAR: return "linear pixel, linear mipmap";
+    }
+    assert(false);
+    return "";
+}
+
+const char* glMagFilterModeStr(int magFitlerMode)
+{
+    switch(magFitlerMode) {
+        case GL_NEAREST: return "nearest";
+        case GL_LINEAR: return "linear";
+    }
+    assert(false);
+    return "";
+}
+
+const char* glTextureWrapModeStr(int wrapMode)
+{
+    switch (wrapMode) {
+        case GL_CLAMP_TO_EDGE: return "clamp to edge";
+        case GL_CLAMP_TO_BORDER: return "clamp to border";
+        case GL_MIRRORED_REPEAT: return "mirrored repeat";
+        case GL_REPEAT: return "repeat";
+        //case GL_MIRROR_CLAMP_TO_EDGE: return "mirror clamp to edge";
+    }
+    assert(false);
+    return "";
+}
+
+/*
+namespace fonts
+{
+ImFont* roboto = nullptr;
+ImFont* robotoBold = nullptr;
+}
+*/

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE QtCreatorProject>
-<!-- Written by QtCreator 4.11.0, 2020-01-20T21:56:29. -->
+<!-- Written by QtCreator 4.11.0, 2020-01-25T20:02:54. -->
 <qtcreator>
  <data>
   <variable>EnvironmentId</variable>
@@ -1076,7 +1076,7 @@
     <value type="bool" key="RunConfiguration.UseMultiProcess">false</value>
     <value type="bool" key="RunConfiguration.UseQmlDebugger">false</value>
     <value type="bool" key="RunConfiguration.UseQmlDebuggerAuto">true</value>
-    <value type="QString" key="RunConfiguration.WorkingDirectory"></value>
+    <value type="QString" key="RunConfiguration.WorkingDirectory">/home/tuket/prog/gltf_viewer/data</value>
     <value type="QString" key="RunConfiguration.WorkingDirectory.default">/home/tuket/prog/build-gltf_viewer-Imported_Kit_temporary-Debug</value>
    </valuemap>
    <value type="int" key="ProjectExplorer.Target.RunConfigurationCount">11</value>

@@ -9,8 +9,10 @@
 #include <imgui.h>
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_opengl3.h>
+#include "utils.hpp"
 
 GLFWwindow* window;
+
 
 void glErrorCallback(const char *name, void *funcptr, int len_args, ...) {
     GLenum error_code;
@@ -48,11 +50,47 @@ int main(int argc, char* argv[])
     glad_set_post_callback(glErrorCallback);
 
     ImGui::CreateContext();
-    //ImGuiIO& io = ImGui::GetIO(); (void)io;
+    ImGuiIO& io = ImGui::GetIO(); (void)io;
     //io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
     ImGui::StyleColorsDark();
     ImGui_ImplGlfw_InitForOpenGL(window, true);
     ImGui_ImplOpenGL3_Init();
+    io.Fonts->AddFontDefault();
+    const int fontSize = 18;
+    /*{
+        ImFontConfig font_cfg = ImFontConfig();
+        font_cfg.OversampleH = font_cfg.OversampleV = 4;
+        font_cfg.PixelSnapH = true;
+        font_cfg.SizePixels = fontSize;
+        const char* file = "ProggyClean.ttf";
+        tl::toStringBuffer(font_cfg.Name, file, ", ", fontSize, "px");
+        font_cfg.EllipsisChar = (ImWchar)0x0085;
+        auto font = io.Fonts->AddFontFromFileTTF(file, fontSize, &font_cfg);
+        //fonts::roboto->DisplayOffset.y = -1.0f;
+    }*/
+    /*{
+        ImFontConfig font_cfg = ImFontConfig();
+        font_cfg.OversampleH = font_cfg.OversampleV = 1;
+        font_cfg.PixelSnapH = true;
+        const int size = 18;
+        font_cfg.SizePixels = size;
+        const char* file = "RobotoMono-Regular.ttf";
+        tl::toStringBuffer(font_cfg.Name, file, ", ", fontSize, "px");
+        font_cfg.EllipsisChar = (ImWchar)0x0085;
+        fonts::roboto = io.Fonts->AddFontFromFileTTF(file, fontSize, &font_cfg);
+        fonts::roboto->DisplayOffset.y = -1.0f;
+    }*/
+    /*{
+        ImFontConfig font_cfg = ImFontConfig();
+        font_cfg.OversampleH = font_cfg.OversampleV = 1;
+        font_cfg.PixelSnapH = true;
+        font_cfg.SizePixels = fontSize;
+        const char* file = "RobotoMono-Bold.ttf";
+        tl::toStringBuffer(font_cfg.Name, file, ", ", fontSize, "px");
+        font_cfg.EllipsisChar = (ImWchar)0x0085;
+        fonts::robotoBold = io.Fonts->AddFontFromFileTTF(file, fontSize, &font_cfg);
+        fonts::robotoBold->DisplayOffset.y = -1.0f;
+    }*/
 
     glfwSetDropCallback(window, onFileDroped);
     if(argc > 1) {
