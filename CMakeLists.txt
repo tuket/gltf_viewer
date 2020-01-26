@@ -31,6 +31,7 @@ set(SOURCES
     main.cpp
     scene.hpp scene.cpp
     utils.hpp utils.cpp
+	shaders.hpp shaders.cpp
 )
 PREPEND(SOURCES "src/" ${SOURCES})
 

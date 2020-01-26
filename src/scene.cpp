@@ -33,7 +33,7 @@ constexpr size_t MAX_MATERIALS = 128;
 // scene gpu resources
 namespace gpu
 {
-static u32 shaderProg = 0;
+static u32 metallicShader = 0;
 static FVector<u32, MAX_BUFFER_OBJS> bos;
 static FVector<u32, MAX_VERT_ARRAYS> vaos;
 static FVector<u32, MAX_TEXTURES> textures;

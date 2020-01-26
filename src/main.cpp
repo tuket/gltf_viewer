@@ -10,6 +10,7 @@
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_opengl3.h>
 #include "utils.hpp"
+#include "shaders.hpp"
 
 GLFWwindow* window;
 
@@ -91,6 +92,8 @@ int main(int argc, char* argv[])
         fonts::robotoBold = io.Fonts->AddFontFromFileTTF(file, fontSize, &font_cfg);
         fonts::robotoBold->DisplayOffset.y = -1.0f;
     }*/
+
+    gpu::buildShaders();
 
     glfwSetDropCallback(window, onFileDroped);
     if(argc > 1) {
