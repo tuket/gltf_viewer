@@ -8,7 +8,7 @@ namespace tl
 typedef decltype(nullptr) nullptr_t;
 
 template <typename T, size_t N>
-constexpr size_t size(const T(&)[N]) { return N; }
+constexpr size_t size(T(&)[N]) { return N; }
 
 template <typename T>
 static constexpr T min(const T& a, const T& b) noexcept

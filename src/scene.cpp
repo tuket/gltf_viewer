@@ -10,20 +10,20 @@
 #include <tl/fmt.hpp>
 #include <tl/containers/fvector.hpp>
 #include <stbi.h>
+#include <glm/mat4x4.hpp>
+#include <glm/gtc/type_ptr.hpp>
 #include "utils.hpp"
+#include "shaders.hpp"
 
 using tl::FVector;
 using tl::Array;
 using tl::CArray;
 
-constexpr int SCRATCH_BUFFER_SIZE = 1*1024*1024;
-static union {
-    u8 scratchBuffer[SCRATCH_BUFFER_SIZE];
-    char scratchStr[SCRATCH_BUFFER_SIZE];
-};
 static CStr openedFilePath = "";
 static cgltf_data* parsedData = nullptr;
 static cgltf_node* selectedNode = nullptr;
+static i32 selectedCamera = -1; // -1 is the default orbit camera, indices >=0 are indices of the gltf camera
+static OrbitCameraInfo orbitCam;
 
 constexpr size_t MAX_BUFFER_OBJS = 256;
 constexpr size_t MAX_VERT_ARRAYS = 128;
@@ -50,7 +50,7 @@ struct MaterialTexturesHeights { float color; float metallicRoughness; };
 static MaterialTexturesHeights materialTexturesHeights[MAX_MATERIALS];
 }
 
-void freeSceneGpuResources()
+static void freeSceneGpuResources()
 {
     using namespace gpu;
     glDeleteBuffers(bos.size(), bos.begin());
@@ -60,23 +60,38 @@ void freeSceneGpuResources()
 
 i32 selectedSceneInd = 0;
 
-size_t getBufferInd(const cgltf_buffer* buffer) {
+static size_t getBufferInd(const cgltf_buffer* buffer) {
     return (size_t)(buffer - parsedData->buffers);
 }
-size_t getBufferViewInd(const cgltf_buffer_view* view) {
+static size_t getBufferViewInd(const cgltf_buffer_view* view) {
     return (size_t)(view - parsedData->buffer_views);
 }
-size_t getTextureInd(const cgltf_texture* tex) {
+static size_t getAccessorInd(const cgltf_accessor* accessor) {
+    return (size_t)(accessor - parsedData->accessors);
+}
+static size_t getTextureInd(const cgltf_texture* tex) {
     return (size_t)(tex - parsedData->textures);
 }
-size_t getNodeInd(const cgltf_node* node) {
+static size_t getNodeInd(const cgltf_node* node) {
     return (size_t)(node - parsedData->nodes);
 }
-size_t getImageInd(const cgltf_image* image) {
+static size_t getImageInd(const cgltf_image* image) {
     return (size_t)(image - parsedData->images);
 }
+static size_t getMaterialInd(const cgltf_material* material) {
+    return (size_t)(material - parsedData->materials);
+}
 
-void imguiTexture(size_t textureInd, float* height)
+static const char* getCameraName(int ind) {
+    if(ind < 0)
+        return "[DEFAULT ORBIT]";
+    assert(ind < (int)parsedData->cameras_count);
+    const char* name = parsedData->cameras[ind].name;
+    tl::toStringBuffer(scratch.str, "%d) %s", (name ? name : "(null)"));
+    return scratch.str;
+}
+
+static void imguiTexture(size_t textureInd, float* height)
 {
     const size_t i = textureInd;
     const float aspectRatio = (float)gpu::textureSizes[i].x / gpu::textureSizes->y;
@@ -84,7 +99,7 @@ void imguiTexture(size_t textureInd, float* height)
     ImGui::Image((void*)(u64)gpu::textures[i], {*height * aspectRatio, *height});
 }
 
-void imguiTextureView(const cgltf_texture_view& view, float* height)
+static void imguiTextureView(const cgltf_texture_view& view, float* height)
 {
     ImGui::Text("Scale: %f", view.scale);
     if(view.has_transform)
@@ -97,7 +112,147 @@ void imguiTextureView(const cgltf_texture_view& view, float* height)
     }
     ImGui::Text("Texcoord index: %d", view.texcoord);
     imguiTexture(getTextureInd(view.texture), height);
-    cgltf_texture* texture;
+}
+
+static void imguiMaterial(const cgltf_material& material)
+{
+    const size_t i = getMaterialInd(&material);
+    ImGui::Text("Name: %s", material.name);
+    if(material.has_pbr_metallic_roughness)
+    if(ImGui::TreeNode("PBR Metallic-Roughness"))
+    {
+        const auto& props = material.pbr_metallic_roughness;
+        const auto& colorFactor = props.base_color_factor;
+        ImGui::Text("Base color factor: {%f, %f, %f, %f}", colorFactor[0], colorFactor[1], colorFactor[2], colorFactor[3]);
+        ImGui::Text("Metallic factor: %f", props.metallic_factor);
+        ImGui::Text("Roughness factor: %f", props.roughness_factor);
+        if(props.base_color_texture.texture)
+        {
+            const size_t texInd = getTextureInd(props.base_color_texture.texture);
+            tl::toStringBuffer(scratch.str, "Color texture: ", i, " - ", gpu::textureSizes[texInd].x, "x", gpu::textureSizes[texInd].y);
+            if(ImGui::TreeNode(scratch.str)) {
+                imguiTextureView(props.base_color_texture, &imgui_state::materialTexturesHeights[i].color);
+                ImGui::TreePop();
+            }
+        }
+        if(props.metallic_roughness_texture.texture)
+        {
+            const size_t texInd = getTextureInd(props.metallic_roughness_texture.texture);
+            tl::toStringBuffer(scratch.str, "Metallic-roughness texture: ", i, " - ", gpu::textureSizes[texInd].x, "x", gpu::textureSizes[texInd].y);
+            if(ImGui::TreeNode(scratch.str)) {
+                imguiTextureView(props.metallic_roughness_texture, &imgui_state::materialTexturesHeights[i].metallicRoughness);
+                ImGui::TreePop();
+            }
+        }
+        ImGui::TreePop();
+    }
+}
+
+static void imguiAccessor(const cgltf_accessor& accessor)
+{
+    ImGui::Text("Type: %s", cgltfTypeStr(accessor.type));
+    ImGui::Text("Component type: %s", cgltfComponentTypeStr(accessor.component_type));
+    if(accessor.has_min)
+        ImGui::Text("Min: %s", cgltfValueStr(accessor.type, accessor.min));
+    if(accessor.has_max)
+        ImGui::Text("Min: %s", cgltfValueStr(accessor.type, accessor.max));
+
+    ImGui::Text("Offset: %ld", accessor.offset);
+    ImGui::Text("Count: %ld", accessor.count);
+    ImGui::Text("Stride: %ld", accessor.stride);
+    ImGui::Text("Normalized: %s", accessor.normalized ? "true" : "false");
+    ImGui::Text("Buffer view: %ld", getBufferViewInd(accessor.buffer_view));
+}
+
+static void imguiAttribute(const cgltf_attribute& attrib)
+{
+    ImGui::Text("Index: %d", attrib.index);
+    ImGui::Text("Name: %s", attrib.name);
+    ImGui::Text("Type: %s", cgltfAttribTypeStr(attrib.type));
+    if(ImGui::TreeNode((void*)&attrib.data, "Accessor %ld", getAccessorInd(attrib.data)))
+    {
+        imguiAccessor(*attrib.data);
+        ImGui::TreePop();
+    }
+}
+
+static void imguiPrimitive(const cgltf_primitive& prim)
+{
+    ImGui::Text("Type: %s", cgltfPrimitiveTypeStr(prim.type));
+    if(prim.indices) {
+        if(ImGui::TreeNode((void*)prim.indices,
+                           "Indices (accessor %ld)", getAccessorInd(prim.indices)))
+        {
+            imguiAccessor(*prim.indices);
+            ImGui::TreePop();
+        }
+    }
+
+    if(prim.material == nullptr) {
+        ImGui::Text("Material: NULL");
+    }
+    else {
+        tl::toStringBuffer(scratch.str, "Material (", getMaterialInd(prim.material), ")");
+        if (ImGui::TreeNode((void*)&prim.material, scratch.str)) {
+            imguiMaterial(*prim.material);
+            ImGui::TreePop();
+        }
+    }
+
+    if(ImGui::TreeNode("Attributes")) {
+        CArray<cgltf_attribute> attributes(prim.attributes, prim.attributes_count);
+        for(size_t i = 0; i < attributes.size(); i++)
+        {
+            auto& attrib = attributes[i];
+            if(ImGui::TreeNode((void*)&attrib, "%ld) %s", i, attrib.name))
+            {
+                imguiAttribute(attrib);
+                ImGui::TreePop();
+            }
+        }
+        ImGui::TreePop();
+    }
+
+    // THE FOLLOWNG CODE (Morph targets) HAS NOT BEEN TESTED
+    if(prim.targets)
+    if(ImGui::TreeNode("Morph targets")) {
+        CArray<cgltf_morph_target> targets(prim.targets, prim.targets_count);
+        for(size_t i = 0; i < targets.size(); i++)
+        {
+            auto& target = targets[i];
+            if(target.attributes == nullptr) {
+                ImGui::Text("Attributes: (null)");
+            }
+            else if(ImGui::TreeNode((void*)&target, "Attributes"))
+            {
+                CArray<cgltf_attribute> attribs(target.attributes, target.attributes_count);
+                for(size_t i = 0; i < attribs.size(); i++)
+                {
+                    auto& attrib = attribs[i];
+                    if(ImGui::TreeNode(&attrib, "%ld) %s", i, attrib.name))
+                    {
+                        imguiAttribute(attrib);
+                        ImGui::TreePop();
+                    }
+                }
+            }
+        }
+    }
+}
+
+static void drawSceneNodeRecursive(const cgltf_node* node, const glm::mat4& parentMat = glm::mat4(1.0))
+{
+    return; // DISABLED
+    if(node->mesh)
+    {
+        glm::mat4 modelMat = parentMat * glm::make_mat4(node->matrix);
+        CArray<cgltf_primitive> primitives(node->mesh->primitives, node->mesh->primitives_count);
+        for(const cgltf_primitive& prim : primitives)
+        {
+            //ImGui::Text("Type: %s", cgltfTypeStr(prim.type));
+            //prim.attributes->
+        }
+    }
 }
 
 void drawScene()
@@ -106,11 +261,13 @@ void drawScene()
     glClear(GL_COLOR_BUFFER_BIT);
     if(!parsedData)
         return;
-
-    //parsedData->
+    CArray<cgltf_node*> nodes;
+    for(cgltf_node* node : nodes)
+        if(node->parent == nullptr)
+            drawSceneNodeRecursive(node);
 }
 
-void sceneNodeGuiRecusive(cgltf_node* node)
+static void sceneNodeGuiRecusive(cgltf_node* node)
 {
     ImGuiTreeNodeFlags flags = 0;
     if(selectedNode == node)
@@ -140,7 +297,7 @@ void sceneNodeGuiRecusive(cgltf_node* node)
     }
 }
 
-void drawGui_scenesTab()
+static void drawGui_scenesTab()
 {
     static float leftPanelSize = 0.3f, rightPanelSize = 1.f - leftPanelSize;
     const float W = ImGui::GetWindowSize().x;
@@ -154,9 +311,9 @@ void drawGui_scenesTab()
         if(sceneInd != -1) {
             sceneName = parsedData->scenes[sceneInd].name;
             sceneName = sceneName ? sceneName : "";
-            tl::toStringBuffer(scratchStr, sceneInd, ") ", sceneName);
+            tl::toStringBuffer(scratch.str, sceneInd, ") ", sceneName);
         }
-        return scratchStr;
+        return scratch.str;
     };
     if(ImGui::BeginCombo("scene", sceneComboDisplayStr(selectedSceneInd)))
     {
@@ -190,15 +347,15 @@ void drawGui_scenesTab()
     rightPanelSize /= ImGui::GetWindowSize().x;
 }
 
-void drawGui_meshesTab()
+static void drawGui_meshesTab()
 {
     const auto* meshes = parsedData->meshes;
     const size_t numMeshes = parsedData->meshes_count;
     for(size_t i = 0; i < numMeshes; i++)
     {
         auto& mesh = meshes[i];
-        tl::toStringBuffer(scratchStr, i, ") ", mesh.name ? mesh.name : "");
-        if(ImGui::CollapsingHeader(scratchStr))
+        tl::toStringBuffer(scratch.str, i, ") ", mesh.name ? mesh.name : "");
+        if(ImGui::CollapsingHeader(scratch.str))
         {
             ImGui::TreePush();
             if(ImGui::TreeNode((void*)&mesh, "Primitives (%ld)", mesh.primitives_count))
@@ -210,10 +367,7 @@ void drawGui_meshesTab()
                     auto& prim = primitives[primInd];
                     if(ImGui::TreeNode((void*)&prim, "%ld", primInd))
                     {
-                        ImGui::Text("Type: %s", cgltfPrimitiveTypeStr(prim.type).c_str());
-                        if(prim.indices) {
-                            //prim.indices->component_type
-                        }
+                        imguiPrimitive(prim);
                         ImGui::TreePop();
                     }
                 }
@@ -224,7 +378,7 @@ void drawGui_meshesTab()
     }
 }
 
-void drawGui_texturesTab()
+static void drawGui_texturesTab()
 {
     auto showSamplerData = [](const cgltf_sampler& sampler)
     {
@@ -251,13 +405,13 @@ void drawGui_texturesTab()
         }*/
     };
     tl::CArray<cgltf_texture> textures(parsedData->textures, parsedData->textures_count);
-    tl::toStringBuffer(scratchStr, "Textures (", textures.size(), ")");
-    if(ImGui::CollapsingHeader(scratchStr))
+    tl::toStringBuffer(scratch.str, "Textures (", textures.size(), ")");
+    if(ImGui::CollapsingHeader(scratch.str))
     for(size_t i = 0; i < textures.size(); i++)
     {
         auto& texture = textures[i];
-        tl::toStringBuffer(scratchStr, i, ") ", texture.name ? texture.name : "");
-        if(ImGui::TreeNode((void*)&texture, "%s", scratchStr))
+        tl::toStringBuffer(scratch.str, i, ") ", texture.name ? texture.name : "");
+        if(ImGui::TreeNode((void*)&texture, "%s", scratch.str))
         {
             if(texture.image == nullptr) {
                 ImGui::Text("image: (null)");
@@ -279,8 +433,8 @@ void drawGui_texturesTab()
     }
 
     tl::CArray<cgltf_image> images(parsedData->images, parsedData->images_count);
-    tl::toStringBuffer(scratchStr, "Images (", images.size(), ")");
-    if(ImGui::CollapsingHeader(scratchStr))
+    tl::toStringBuffer(scratch.str, "Images (", images.size(), ")");
+    if(ImGui::CollapsingHeader(scratch.str))
     for(size_t i = 0; i < images.size(); i++)
     if(ImGui::TreeNode((void*)&images[i], "%ld", i))
     {
@@ -289,8 +443,8 @@ void drawGui_texturesTab()
     }
 
     tl::CArray<cgltf_sampler> samplers(parsedData->samplers, parsedData->samplers_count);
-    tl::toStringBuffer(scratchStr, "Samplers (", samplers.size(), ")");
-    if(ImGui::CollapsingHeader(scratchStr))
+    tl::toStringBuffer(scratch.str, "Samplers (", samplers.size(), ")");
+    if(ImGui::CollapsingHeader(scratch.str))
     for(size_t i = 0; i < samplers.size(); i++)
     if(ImGui::TreeNode((void*)&samplers[i], "%ld", i))
     {
@@ -299,7 +453,7 @@ void drawGui_texturesTab()
     }
 }
 
-void drawGui_buffersTab()
+static void drawGui_buffersTab()
 {
     CArray<cgltf_buffer> buffers (parsedData->buffers, parsedData->buffers_count);
     for(size_t i = 0; i < buffers.size(); i++)
@@ -312,22 +466,22 @@ void drawGui_buffersTab()
             sizeXBytes /= 1024;
             unitInd++;
         }
-        tl::toStringBuffer(scratchStr, i, ") ", buffer.uri ? buffer.uri : "", sizeXBytes, unitsStrs[unitInd]);
-        if(ImGui::CollapsingHeader(scratchStr))
+        tl::toStringBuffer(scratch.str, i, ") ", buffer.uri ? buffer.uri : "", sizeXBytes, unitsStrs[unitInd]);
+        if(ImGui::CollapsingHeader(scratch.str))
         {
             // TODO
         }
     }
 }
 
-void drawGui_bufferViewsTab()
+static void drawGui_bufferViewsTab()
 {
     CArray<cgltf_buffer_view> views (parsedData->buffer_views, parsedData->buffer_views_count);
     for(size_t i = 0; i < views.size(); i++)
     {
         const cgltf_buffer_view& view = views[i];
-        tl::toStringBuffer(scratchStr, i);
-        if(ImGui::CollapsingHeader(scratchStr))
+        tl::toStringBuffer(scratch.str, i);
+        if(ImGui::CollapsingHeader(scratch.str))
         {
             ImGui::TreePush();
             static const char* typeStrs[] = {"invalid", "indices", "vertices"};
@@ -341,112 +495,39 @@ void drawGui_bufferViewsTab()
     }
 }
 
-void drawGui_accessorsTab()
+static void drawGui_accessorsTab()
 {
     CArray<cgltf_accessor> accessors (parsedData->accessors, parsedData->accessors_count);
     for(size_t i = 0; i < accessors.size(); i++)
     {
         const cgltf_accessor& accessor = accessors[i];
-        tl::toStringBuffer(scratchStr, i);
-        if(ImGui::CollapsingHeader(scratchStr))
+        tl::toStringBuffer(scratch.str, i);
+        if(ImGui::CollapsingHeader(scratch.str))
         {
             ImGui::TreePush();
-            static const char* types[] = {"invalid", "scalar", "vec2", "vec3", "vec4", "mat2", "mat3", "mat4"};
-            const char* typeStr = types[accessor.type];
-            ImGui::Text("Type: %s", typeStr);
-            static const char* componentTypeStrs[] = {"invalid", "i8", "u8", "i16", "u16", "32u", "32f"};
-            const char* componentTypeStr = componentTypeStrs[accessor.component_type];
-            ImGui::Text("Component type: %s", componentTypeStr);
-            auto valStr = [type = accessor.type](const cgltf_float (&m)[16]) -> const char*
-            {
-                switch(type)
-                {
-                case cgltf_type_scalar:
-                    sprintf(scratchStr, "%f", m[0]);
-                    break;
-                case cgltf_type_vec2:
-                    sprintf(scratchStr, "{%f, %f}", m[0], m[1]);
-                    break;
-                case cgltf_type_vec3:
-                    sprintf(scratchStr, "{%f, %f, %f}", m[0], m[1], m[2]);
-                    break;
-                case cgltf_type_vec4:
-                    sprintf(scratchStr, "{%f, %f, %f, %f}", m[0], m[1], m[2], m[3]);
-                    break;
-                case cgltf_type_mat2:
-                    sprintf(scratchStr, "{{%f, %f}, {%f, %f}}", m[0], m[1], m[2], m[3]);
-                    break;
-                case cgltf_type_mat3:
-                    sprintf(scratchStr, "{{%f, %f, %f}, {%f, %f, %f}, {%f, %f, %f}}", m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7], m[8]);
-                    break;
-                case cgltf_type_mat4:
-                    sprintf(scratchStr, "{{%f, %f, %f, %f}, {%f, %f, %f, %f}, {%f, %f, %f, %f}, {%f, %f, %f, %f}}", m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7], m[8], m[9], m[10], m[11], m[12], m[13], m[14], m[15]);
-                    break;
-                default:
-                    sprintf(scratchStr, "invalid");
-                }
-                return scratchStr;
-            };
-            if(accessor.has_min)
-                ImGui::Text("Min: %s", valStr(accessor.min));
-            if(accessor.has_max)
-                ImGui::Text("Min: %s", valStr(accessor.max));
-
-            ImGui::Text("Offset: %ld", accessor.offset);
-            ImGui::Text("Count: %ld", accessor.count);
-            ImGui::Text("Stride: %ld", accessor.stride);
-            ImGui::Text("Normalized: %s", accessor.normalized ? "true" : "false");
-            ImGui::Text("Buffer view: %ld", getBufferViewInd(accessor.buffer_view));
-
+            imguiAccessor(accessor);
             ImGui::TreePop();
         }
     }
 }
 
-void drawGui_materialsTab()
+static void drawGui_materialsTab()
 {
     CArray<cgltf_material> materials(parsedData->materials, parsedData->materials_count);
     for(size_t i = 0; i < materials.size(); i++)
     {
         const cgltf_material& material = materials[i];
-        tl::toStringBuffer(scratchStr, i, ") ", material.name ? material.name : "");
-        if(ImGui::CollapsingHeader(scratchStr))
+        tl::toStringBuffer(scratch.str, i, ") ", material.name ? material.name : "");
+        if(ImGui::CollapsingHeader(scratch.str))
         {
             ImGui::TreePush();
-            if(material.has_pbr_metallic_roughness)
-            if(ImGui::TreeNode("PBR Metallic-Roughness"))
-            {
-                const auto& props = material.pbr_metallic_roughness;
-                const auto& colorFactor = props.base_color_factor;
-                ImGui::Text("Base color factor: {%f, %f, %f, %f}", colorFactor[0], colorFactor[1], colorFactor[2], colorFactor[3]);
-                ImGui::Text("Metallic factor: %f", props.metallic_factor);
-                ImGui::Text("Roughness factor: %f", props.roughness_factor);
-                if(props.base_color_texture.texture)
-                {
-                    const size_t texInd = getTextureInd(props.base_color_texture.texture);
-                    tl::toStringBuffer(scratchStr, "Color texture: ", i, " - ", gpu::textureSizes[texInd].x, "x", gpu::textureSizes[texInd].y);
-                    if(ImGui::TreeNode(scratchStr)) {
-                        imguiTextureView(props.base_color_texture, &imgui_state::materialTexturesHeights[i].color);
-                        ImGui::TreePop();
-                    }
-                }
-                if(props.metallic_roughness_texture.texture)
-                {
-                    const size_t texInd = getTextureInd(props.metallic_roughness_texture.texture);
-                    tl::toStringBuffer(scratchStr, "Metallic-roughness texture: ", i, " - ", gpu::textureSizes[texInd].x, "x", gpu::textureSizes[texInd].y);
-                    if(ImGui::TreeNode(scratchStr)) {
-                        imguiTextureView(props.metallic_roughness_texture, &imgui_state::materialTexturesHeights[i].metallicRoughness);
-                        ImGui::TreePop();
-                    }
-                }
-                ImGui::TreePop();
-            }
+            imguiMaterial(material);
             ImGui::TreePop();
         }
     }
 }
 
-void drawGui_skins()
+static void drawGui_skins()
 {
     CArray<cgltf_skin> skins(parsedData->skins, parsedData->skins_count);
     for(size_t i = 0; i < skins.size(); i++)
@@ -473,13 +554,13 @@ void drawGui_skins()
     }
 }
 
-void drawGui_samplers()
+static void drawGui_samplers()
 {
     CArray<cgltf_sampler> samplers (parsedData->samplers, parsedData->samplers_count);
     for(size_t i = 0; i < samplers.size(); i++)
     {
-        tl::toStringBuffer(scratchStr, i);
-        if(ImGui::CollapsingHeader(scratchStr))
+        tl::toStringBuffer(scratch.str, i);
+        if(ImGui::CollapsingHeader(scratch.str))
         {
             ImGui::TreePush();
             const cgltf_sampler& sampler = samplers[i];
@@ -488,6 +569,49 @@ void drawGui_samplers()
             ImGui::Text("Wrap mode S: %s", glTextureWrapModeStr(sampler.wrap_s));
             ImGui::Text("Wrap mode T: %s", glTextureWrapModeStr(sampler.wrap_t));
             ImGui::TreePop();
+        }
+    }
+}
+
+static void drawGui_cameras()
+{
+    CArray<cgltf_camera> cameras(parsedData->cameras, parsedData->cameras_count);
+
+    if(ImGui::BeginCombo("Use camera", getCameraName(selectedCamera)))
+    {
+        for(i64 i = -1; i < (i64)cameras.size(); i++)
+        {
+            ImGui::PushID((void*)i);
+            if (ImGui::Selectable(getCameraName(i)))
+                selectedSceneInd = i;
+            ImGui::PopID();
+        }
+        ImGui::EndCombo();
+    }
+
+    if(ImGui::CollapsingHeader("Cameras")) {
+        for(size_t i = 0; i < cameras.size(); i++)
+        {
+            auto& camera = cameras[i];
+            if(ImGui::TreeNode((void*)&camera, "%ld) %s", i, camera.name))
+            {
+                ImGui::Text("Name: %s", camera.name);
+                ImGui::Text("Type: %s", cgltfCameraTypeStr(camera.type));
+                if(camera.type == cgltf_camera_type_perspective) {
+                    auto& data = camera.data.perspective;
+                    ImGui::Text("Aspect ratio: %f", data.aspect_ratio);
+                    ImGui::Text("Fov Y: %f", data.yfov);
+                    ImGui::Text("Near: %f", data.znear);
+                    ImGui::Text("Far: %f", data.zfar);
+                }
+                else if(camera.type == cgltf_camera_type_orthographic) {
+                    auto& data = camera.data.orthographic;
+                    ImGui::Text("SizeXY: %f x %f", data.xmag, data.ymag);
+                    ImGui::Text("Near: %f", data.znear);
+                    ImGui::Text("Far: %f", data.zfar);
+                }
+                ImGui::TreePop();
+            }
         }
     }
 }
@@ -501,8 +625,8 @@ void drawGui()
     }
 
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(1,1));
-    tl::toStringBuffer(scratchStr, openedFilePath,"##0");
-    ImGui::Begin(scratchStr);
+    tl::toStringBuffer(scratch.str, openedFilePath,"##0");
+    ImGui::Begin(scratch.str);
     ImGui::PopStyleVar();
 
     if (ImGui::BeginTabBar("TopTabBar"))
@@ -539,20 +663,23 @@ void drawGui()
             drawGui_skins();
             ImGui::EndTabItem();
         }
+        if(ImGui::BeginTabItem("Cameras")) {
+            drawGui_cameras();
+            ImGui::EndTabItem();
+        }
         ImGui::EndTabBar();
     }
 
     ImGui::End();
 }
 
-void loadTextures()
+static void loadTextures()
 {
     CArray<cgltf_texture> textures(parsedData->textures, parsedData->textures_count);
     gpu::textures.resize(textures.size());
     glGenTextures(textures.size(), gpu::textures.begin());
     for(size_t i = 0; i < textures.size(); i++)
     {
-        CStr mimeType = textures[i].image->mime_type;
         const auto* bufferView = textures[i].image->buffer_view;
         const auto* data = (u8*)bufferView->buffer->data + bufferView->offset;
         const size_t size = bufferView->size;
@@ -575,7 +702,7 @@ void loadTextures()
     }
 }
 
-void loadBufferObjects()
+static void loadBufferObjects()
 {
     CArray<cgltf_buffer> buffers (parsedData->buffers, parsedData->buffers_count);
     gpu::bos.resize(buffers.size());
@@ -588,13 +715,21 @@ void loadBufferObjects()
     }
 }
 
-void loadMaterials()
+static void loadMaterials()
 {
     CArray<cgltf_material> materials (parsedData->materials, parsedData->materials_count);
     for(size_t i = 0; i < materials.size(); i++)
     {
         imgui_state::materialTexturesHeights[i] = {128.f, 128.f};
     }
+}
+
+static void setupOrbitCamera()
+{
+    // we should compute here nice value so we can view the whole scene
+    orbitCam.pitch = 0;
+    orbitCam.heading = 0;
+    orbitCam.distance = 100;
 }
 
 bool loadGltf(const char* path)
@@ -617,6 +752,7 @@ bool loadGltf(const char* path)
         loadTextures();
         loadBufferObjects();
         loadMaterials();
+        setupOrbitCamera();
         return true;
     }
     fprintf(stderr, "error loading\n");

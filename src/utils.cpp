@@ -5,6 +5,16 @@
 #include <imgui_internal.h>
 #include <tl/basic.hpp>
 #include <glad/glad.h>
+#include <glm/gtx/euler_angles.hpp>
+
+ScratchBuffer scratch;
+
+glm::mat4 OrbitCameraInfo::viewMtx()const
+{
+    auto mtx = glm::eulerAngleXY(-PI*pitch, -PI*heading);
+    mtx[3][2] = -distance;
+    return mtx;
+}
 
 bool Splitter(bool split_vertically, float thickness, float* size1, float* size2, float min_size1, float min_size2, float splitter_long_axis_size)
 {
@@ -23,9 +33,9 @@ bool Splitter(bool split_vertically, float thickness, float* size1, float* size2
     return SplitterBehavior(bb, id, split_vertically ? ImGuiAxis_X : ImGuiAxis_Y, size1, size2, min_size1, min_size2, 0.0f);
 }
 
-CStr cgltfPrimitiveTypeStr(cgltf_primitive_type type)
+const char* cgltfPrimitiveTypeStr(cgltf_primitive_type type)
 {
-    static CStr strs[] = {
+    static const char* strs[] = {
         "POINTS",
         "LINES",
         "LINE_LOOP",
@@ -35,8 +45,71 @@ CStr cgltfPrimitiveTypeStr(cgltf_primitive_type type)
         "TRIANGLE_FAN"
     };
     const u32 i = type;
-    assert(i < size(strs));
+    assert(i < tl::size(strs));
     return strs[i];
+}
+
+const char* cgltfTypeStr(cgltf_type type)
+{
+    static const char* strs[] = {"invalid", "scalar", "vec2", "vec3", "vec4", "mat2", "mat3", "mat4"};
+    const u32 i = type;
+    assert(i < tl::size(strs));
+    return strs[i];
+}
+
+const char* cgltfComponentTypeStr(cgltf_component_type type)
+{
+    static const char* strs[] = {"invalid", "i8", "u8", "i16", "u16", "u32", "f32"};
+    const u32 i = type;
+    assert(i < tl::size(strs));
+    return strs[i];
+}
+
+const char* cgltfAttribTypeStr(cgltf_attribute_type type)
+{
+    static const char* strs[] = {"invalid", "position", "normal", "tangent", "texcoord", "color", "joints", "weights"};
+    const u32 i = type;
+    assert(i < tl::size(strs));
+    return strs[i];
+}
+
+const char* cgltfCameraTypeStr(cgltf_camera_type type)
+{
+    static const char* strs[] = {"invalid", "perspective", "orthographic"};
+    const u32 i = type;
+    assert(i < tl::size(strs));
+    return strs[i];
+}
+
+const char* cgltfValueStr(cgltf_type type, const cgltf_float (&m)[16])
+{
+    switch(type)
+    {
+    case cgltf_type_scalar:
+        sprintf(scratch.str, "%f", m[0]);
+        break;
+    case cgltf_type_vec2:
+        sprintf(scratch.str, "{%f, %f}", m[0], m[1]);
+        break;
+    case cgltf_type_vec3:
+        sprintf(scratch.str, "{%f, %f, %f}", m[0], m[1], m[2]);
+        break;
+    case cgltf_type_vec4:
+        sprintf(scratch.str, "{%f, %f, %f, %f}", m[0], m[1], m[2], m[3]);
+        break;
+    case cgltf_type_mat2:
+        sprintf(scratch.str, "{{%f, %f}, {%f, %f}}", m[0], m[1], m[2], m[3]);
+        break;
+    case cgltf_type_mat3:
+        sprintf(scratch.str, "{{%f, %f, %f}, {%f, %f, %f}, {%f, %f, %f}}", m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7], m[8]);
+        break;
+    case cgltf_type_mat4:
+        sprintf(scratch.str, "{{%f, %f, %f, %f}, {%f, %f, %f, %f}, {%f, %f, %f, %f}, {%f, %f, %f, %f}}", m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7], m[8], m[9], m[10], m[11], m[12], m[13], m[14], m[15]);
+        break;
+    default:
+        sprintf(scratch.str, "invalid");
+    }
+    return scratch.str;
 }
 
 const char* glMinFilterModeStr(int minFilterMode)
