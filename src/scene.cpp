@@ -29,6 +29,7 @@ constexpr size_t MAX_BUFFER_OBJS = 256;
 constexpr size_t MAX_VERT_ARRAYS = 128;
 constexpr size_t MAX_TEXTURES = 128;
 constexpr size_t MAX_MATERIALS = 128;
+constexpr size_t MAX_TOTAL_PRIMITIVES = 1023;
 
 // scene gpu resources
 namespace gpu
@@ -36,6 +37,7 @@ namespace gpu
 static u32 metallicShader = 0;
 static FVector<u32, MAX_BUFFER_OBJS> bos;
 static FVector<u32, MAX_VERT_ARRAYS> vaos;
+static FVector<u32, MAX_TOTAL_PRIMITIVES+1> meshPrimsVaos; // for mesh i, we can find here, at index i, the beginning of the vaos range, and at i+1 the end of that range
 static FVector<u32, MAX_TEXTURES> textures;
 static glm::ivec2 textureSizes[MAX_TEXTURES];
 }
@@ -192,8 +194,7 @@ static void imguiPrimitive(const cgltf_primitive& prim)
         ImGui::Text("Material: NULL");
     }
     else {
-        tl::toStringBuffer(scratch.str, "Material (", getMaterialInd(prim.material), ")");
-        if (ImGui::TreeNode((void*)&prim.material, scratch.str)) {
+        if (ImGui::TreeNode((void*)&prim.material, "Material (%ld)", getMaterialInd(prim.material))) {
             imguiMaterial(*prim.material);
             ImGui::TreePop();
         }
@@ -259,6 +260,7 @@ void drawScene()
 {
     glClearColor(0.1f, 0.2f, 0.1f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
+    return;
     if(!parsedData)
         return;
     CArray<cgltf_node*> nodes;
@@ -715,6 +717,58 @@ static void loadBufferObjects()
     }
 }
 
+static void createVaos()
+{
+    CArray<cgltf_mesh> meshes (parsedData->meshes, parsedData->meshes_count);
+    gpu::meshPrimsVaos.resize(meshes.size()+1);
+    gpu::meshPrimsVaos[0] = 0;
+    u32 rangeInd = 0;
+    for(size_t meshInd = 0; meshInd < meshes.size(); meshInd++)
+    {
+        auto& mesh = meshes[meshInd];
+        CArray<cgltf_primitive> prims(mesh.primitives, mesh.primitives_count);
+        rangeInd += prims.size();
+        gpu::meshPrimsVaos[meshInd+1] = rangeInd;
+    }
+    gpu::vaos.resize(rangeInd);
+    glGenVertexArrays(rangeInd, gpu::vaos.begin());
+
+    for(size_t meshInd = 0; meshInd < meshes.size(); meshInd++)
+    {
+        auto& mesh = meshes[meshInd];
+        const u32 vaoBeginInd = gpu::meshPrimsVaos[meshInd];
+        CArray<cgltf_primitive> prims(mesh.primitives, mesh.primitives_count);
+        for(size_t primInd = 0; primInd < prims.size(); primInd++)
+        {
+            auto& prim = prims[primInd];
+            const u32 vao = gpu::vaos[vaoBeginInd + primInd];
+            glBindVertexArray(vao);
+            CArray<cgltf_attribute> attribs(prim.attributes, prim.attributes_count);
+            u32 availableAttribsMask = 0;
+            for(cgltf_attribute attrib : attribs) {
+                EAttrib eAttrib = strToEAttrib(attrib.name);
+                assert(eAttrib != EAttrib::COUNT);
+                const u32 attribInd = (u32)eAttrib;
+                availableAttribsMask |= 1 << attribInd;
+                glEnableVertexAttribArray(attribInd);
+                const cgltf_accessor* accessor = attrib.data;
+                const GLint numComponents = cgltfTypeNumComponents(accessor->type);
+                const GLenum componentType = cgltfComponentTypeToGl(accessor->component_type);
+                glVertexAttribPointer(attribInd, numComponents, componentType, (u8)accessor->normalized, accessor->stride, (void*)accessor->offset);
+            }
+            if(availableAttribsMask & ((u32)EAttrib::NORMAL | (u32)EAttrib::TANGENT))
+            {
+                availableAttribsMask |= (u32)EAttrib::COTANGENT;
+                // TODO
+            }
+            auto checkAvailable = [availableAttribsMask](EAttrib eAttrib) { return (u32)eAttrib & availableAttribsMask; };
+            if(!)
+                assert(checkAvailable(EAttrib::POSITION) && checkAvailable(EAttrib::NORMAL));
+            if(!)
+        }
+    }
+}
+
 static void loadMaterials()
 {
     CArray<cgltf_material> materials (parsedData->materials, parsedData->materials_count);
@@ -726,7 +780,7 @@ static void loadMaterials()
 
 static void setupOrbitCamera()
 {
-    // we should compute here nice value so we can view the whole scene
+    // we should compute here nice values so we can view the whole scene
     orbitCam.pitch = 0;
     orbitCam.heading = 0;
     orbitCam.distance = 100;
@@ -751,6 +805,7 @@ bool loadGltf(const char* path)
             }
         loadTextures();
         loadBufferObjects();
+        crateVaos();
         loadMaterials();
         setupOrbitCamera();
         return true;

@@ -9,6 +9,35 @@
 
 ScratchBuffer scratch;
 
+CStr toStr(EAttrib type)
+{
+    switch (type) {
+        case EAttrib::POSITION: return "POSITION";
+        case EAttrib::NORMAL: return "NORMAL";
+        case EAttrib::TANGENT: return "TANGENT";
+        case EAttrib::COTANGENT: return "COTANGENT";
+        case EAttrib::TEXCOORD_0: return "TEXCOORD_0";
+        case EAttrib::TEXCOORD_1: return "TEXCOORD_1";
+        case EAttrib::COLOR: return "COLOR";
+        case EAttrib::JOINTS: return "JOINTS";
+        case EAttrib::WEIGHTS: return "WEIGHTS";
+    }
+    return "INVALID";
+}
+EAttrib strToEAttrib(CStr str)
+{
+    if(str == "POSITION") return EAttrib::POSITION;
+    if(str == "NORMAL") return EAttrib::NORMAL;
+    if(str == "TANGENT") return EAttrib::TANGENT;
+    //if(str == "COTANGENT") return EAttrib::COTANGENT; // this one is not the gltf spec
+    if(str == "TEXCOORD_0") return EAttrib::TEXCOORD_0;
+    if(str == "TEXCOORD_1") return EAttrib::TEXCOORD_1;
+    if(str == "COLOR_0") return EAttrib::COLOR;
+    if(str == "JOINTS_0") return EAttrib::JOINTS;
+    if(str == "WEIGHTS_0") return EAttrib::WEIGHTS;
+    return EAttrib::COUNT;
+}
+
 glm::mat4 OrbitCameraInfo::viewMtx()const
 {
     auto mtx = glm::eulerAngleXY(-PI*pitch, -PI*heading);
@@ -31,6 +60,31 @@ bool Splitter(bool split_vertically, float thickness, float* size1, float* size2
             0.0f, 0.0f
         ));
     return SplitterBehavior(bb, id, split_vertically ? ImGuiAxis_X : ImGuiAxis_Y, size1, size2, min_size1, min_size2, 0.0f);
+}
+
+i32 gltfTypeNumComponents(cgltf_type type)
+{
+    static const i32 lu[] = {
+        -1,
+        1, 2, 3, 4,
+        4, 9, 16
+    };
+    return lu[type];
+}
+
+GLenum cgltfComponentTypeToGl(cgltf_component_type type)
+{
+    assert(type != cgltf_component_type_invalid);
+    static GLenum lu[] = {
+        0,
+        GL_BYTE,
+        GL_UNSIGNED_BYTE,
+        GL_SHORT,
+        GL_UNSIGNED_SHORT,
+        GL_UNSIGNED_INT,
+        GL_FLOAT
+    };
+    return lu[type];
 }
 
 const char* cgltfPrimitiveTypeStr(cgltf_primitive_type type)

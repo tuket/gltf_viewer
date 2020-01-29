@@ -58,6 +58,21 @@ bool CStrT<CharT>::operator==(CStrT o)const
     return true;
 }
 
+template<typename CharT>
+bool CStrT<CharT>::operator==(const CharT* o)const
+{
+    const CharT* a = _str;
+    const CharT* b = o;
+    while(true) {
+        if(*a != *b)
+            return false;
+        if(*a == 0)
+            return true;
+        a++;
+        b++;
+    }
+}
+
 template class CStrT<char>;
 template class CStrT<char32_t>;
 

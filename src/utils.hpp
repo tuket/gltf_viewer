@@ -4,6 +4,7 @@
 #include <cgltf.h>
 #include <glm/mat4x4.hpp>
 #include <glm/gtc/constants.hpp>
+#include <glad/glad.h>
 
 constexpr float PI = glm::pi<float>();
 
@@ -14,6 +15,21 @@ union ScratchBuffer {
 };
 extern ScratchBuffer scratch;
 
+enum class EAttrib : u8 {
+    POSITION = 0,
+    NORMAL,
+    TANGENT,
+    COTANGENT,
+    TEXCOORD_0,
+    TEXCOORD_1,
+    COLOR,
+    JOINTS,
+    WEIGHTS,
+    COUNT
+};
+CStr toStr(EAttrib type);
+EAttrib strToEAttrib(CStr str);
+
 struct OrbitCameraInfo {
     float heading, pitch; // in radians
     float distance;
@@ -21,6 +37,9 @@ struct OrbitCameraInfo {
 };
 
 bool Splitter(bool split_vertically, float thickness, float* size1, float* size2, float min_size1, float min_size2, float splitter_long_axis_size = -1.0f);
+
+i32 cgltfTypeNumComponents(cgltf_type type);
+GLenum cgltfComponentTypeToGl(cgltf_component_type type);
 
 const char* cgltfPrimitiveTypeStr(cgltf_primitive_type type);
 const char* cgltfTypeStr(cgltf_type type);

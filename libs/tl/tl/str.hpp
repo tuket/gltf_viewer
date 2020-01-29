@@ -20,6 +20,8 @@ public:
     CStrT(const CharT* str);
     CStrT(const StrT<CharT>& o);
     CStrT(const CharT* begin, const CharT* end);
+    template <u32 N>
+    CStrT(const CharT (&str)[N]) : _size(N-1), _str(str) {}
 
     operator const CharT*()const { return _str; }
     const CharT* c_str()const{ return _str; }
@@ -35,6 +37,9 @@ public:
     const CharT* end()const { return _str + _size; }
 
     bool operator==(CStrT o)const;
+    bool operator==(const CharT* o)const;
+    template<u32 N>
+    bool operator==(const CharT (&o)[N])const { return *this == CStrT(o); }
 
 private:
     u32 _size;
