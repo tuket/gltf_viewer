@@ -1,5 +1,6 @@
 #include "scene.hpp"
 
+#define GLM_FORCE_RADIANS
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 #include <imgui.h>
@@ -28,7 +29,7 @@ static cgltf_node* selectedNode = nullptr;
 static i32 selectedCamera = -1; // -1 is the default orbit camera, indices >=0 are indices of the gltf camera
 static OrbitCameraInfo orbitCam;
 #ifdef GLM_FORCE_RADIANS
-static const CameraProjectionInfo camProjInfo = {45.f, 0.02f, 500.f};
+static const CameraProjectionInfo camProjInfo = {glm::radians(45.f), 0.02f, 500.f};
 #else
 static const CameraProjectionInfo camProjInfo = {glm::radians(45.f), 0.02f, 500.f};
 
@@ -60,6 +61,44 @@ namespace imgui_state
 static float textureHeights[MAX_TEXTURES];
 struct MaterialTexturesHeights { float color; float metallicRoughness; };
 static MaterialTexturesHeights materialTexturesHeights[MAX_MATERIALS];
+}
+
+namespace mouse_handling
+{
+    static bool pressed = false;
+    static float prevX, prevY;
+    void onMouseButton(GLFWwindow* window, int button, int action, int mods)
+    {
+        if(button == GLFW_MOUSE_BUTTON_LEFT)
+            pressed = action == GLFW_PRESS;
+    }
+    void onMouseMove(GLFWwindow* window, double x, double y)
+    {
+        if(selectedCamera == -1) // orbit camera is active
+        if(pressed)
+        {
+            const float dx = (float)x - prevX;
+            const float dy = (float)y - prevY;
+            constexpr float speed = PI;
+            int windowW, windowH;
+            glfwGetWindowSize(window, &windowW, &windowH);
+            orbitCam.heading += speed * dx / windowW;
+            while(orbitCam.heading < 0)
+                orbitCam.heading += 2*PI;
+            while(orbitCam.heading > 2*PI)
+                orbitCam.heading -= 2*PI;
+            orbitCam.pitch += speed * dy / windowH;
+            orbitCam.pitch = glm::clamp(orbitCam.pitch, -0.45f*PI, +0.45f*PI);
+        }
+        prevX = (float)x;
+        prevY = (float)y;
+    }
+    void onMouseWheel(GLFWwindow* window, double dx, double dy)
+    {
+        const float speed = 1.04f;
+        orbitCam.distance *= pow(speed, (float)dy);
+        orbitCam.distance = glm::max(orbitCam.distance, 0.01f);
+    }
 }
 
 static void freeSceneGpuResources()

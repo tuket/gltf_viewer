@@ -40,7 +40,7 @@ EAttrib strToEAttrib(CStr str)
 
 glm::mat4 OrbitCameraInfo::viewMtx()const
 {
-    auto mtx = glm::eulerAngleXY(-PI*pitch, -PI*heading);
+    auto mtx = glm::eulerAngleXY(pitch, heading);
     mtx[3][2] = -distance;
     return mtx;
 }

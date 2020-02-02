@@ -98,6 +98,9 @@ int main(int argc, char* argv[])
 
     gpu::buildShaders();
 
+    glfwSetMouseButtonCallback(window, mouse_handling::onMouseButton);
+    glfwSetCursorPosCallback(window, mouse_handling::onMouseMove);
+    glfwSetScrollCallback(window, mouse_handling::onMouseWheel);
     glfwSetDropCallback(window, onFileDroped);
     if(argc > 1) {
         loadGltf(argv[1]);

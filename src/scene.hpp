@@ -4,6 +4,13 @@
 
 struct GLFWwindow;
 
+namespace mouse_handling
+{
+void onMouseButton(GLFWwindow* window, int button, int action, int mods);
+void onMouseMove(GLFWwindow* window, double x, double y);
+void onMouseWheel(GLFWwindow* window, double dx, double dy);
+}
+
 void drawScene();
 void drawGui();
 
