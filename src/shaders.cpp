@@ -57,7 +57,7 @@ in vec4 v_color;
 
 void main()
 {
-    o_color = vec4(1.0, 0.0, 0.0, 1.0);
+    o_color = vec4(abs(v_normal), 1.0);
 }
 
 )GLSL";
@@ -77,9 +77,9 @@ void uploadShaderSources(u32 shader, const Ts&... xs)
    glShaderSource(shader, sizeof...(xs), srcs, sizes);
 }
 
-namespace progs
+namespace sd
 {
-    static u32 pbrMetallic = 0;
+    static ShaderData pbrMetallic;
 }
 
 constexpr u32 infoLogSize = 32*1024;
@@ -106,6 +106,14 @@ static const char* programLinkErrs(u32 prog)
     return nullptr;
 }
 
+void findAllUnifLocations(ShaderData& data)
+{
+   data.unifLocs.modelView3 = glGetUniformLocation(data.prog, "u_modelView3");
+   data.unifLocs.modelViewProj = glGetUniformLocation(data.prog, "u_modelViewProj");
+//   data.unifLocs.albedoTexture = glGetUniformLocation(data.prog, "u_albedoTex");
+//   data.unifLocs.normalTexture = glGetUniformLocation(data.prog, "u_normalTex");
+}
+
 bool buildShaders()
 {
     const u32 vertShader = glCreateShader(GL_VERTEX_SHADER);
@@ -116,35 +124,43 @@ bool buildShaders()
         return false;
     }
 
-    const u32 metallicShader = glCreateShader(GL_FRAGMENT_SHADER);
-    uploadShaderSources(metallicShader, src::version, src::pbrMetallic);
-    glCompileShader(metallicShader);
-    if(const char* errs = shaderCompileErrs(metallicShader)) {
-        tl::printError(errs);
-        return false;
+    { // metallic
+        const u32 fragShader = glCreateShader(GL_FRAGMENT_SHADER);
+        uploadShaderSources(fragShader, src::version, src::pbrMetallic);
+        glCompileShader(fragShader);
+        if(const char* errs = shaderCompileErrs(fragShader)) {
+            tl::printError(errs);
+            return false;
+        }
+
+        auto& data = sd::pbrMetallic;
+        data.prog = glCreateProgram();
+        glAttachShader(data.prog, vertShader);
+        glAttachShader(data.prog, fragShader);
+        glLinkProgram(data.prog);
+        if(const char* errs = programLinkErrs(data.prog)) {
+            tl::printError(errs);
+            glDeleteShader(fragShader);
+            glDeleteProgram(data.prog);
+            return false;
+        }
+        findAllUnifLocations(data);
+        glDeleteShader(fragShader);
     }
 
-    progs::pbrMetallic = glCreateProgram();
-    glAttachShader(progs::pbrMetallic, vertShader);
-    glAttachShader(progs::pbrMetallic, metallicShader);
-    glLinkProgram(progs::pbrMetallic);
-    if(const char* errs = programLinkErrs(progs::pbrMetallic)) {
-        tl::printError(errs);
-        return false;
-    }
-
+    glDeleteShader(vertShader);
     return true;
 }
 
-u32 shaderPbrMetallic()
+const ShaderData& shaderPbrMetallic()
 {
-    return progs::pbrMetallic;
+    return sd::pbrMetallic;
 }
 
-u32 shaderPbrGloss()
+const ShaderData& shaderPbrGloss()
 {
     assert(false && "not implemented");
-    return 0;
+    return {};
 }
 
 }

@@ -1,6 +1,7 @@
 #include "scene.hpp"
 
 #include <glad/glad.h>
+#include <GLFW/glfw3.h>
 #include <imgui.h>
 #include <imgui_internal.h>
 #include <cgltf.h>
@@ -19,11 +20,20 @@ using tl::FVector;
 using tl::Array;
 using tl::CArray;
 
+extern GLFWwindow* window;
+
 static CStr openedFilePath = "";
 static cgltf_data* parsedData = nullptr;
 static cgltf_node* selectedNode = nullptr;
 static i32 selectedCamera = -1; // -1 is the default orbit camera, indices >=0 are indices of the gltf camera
 static OrbitCameraInfo orbitCam;
+#ifdef GLM_FORCE_RADIANS
+static const CameraProjectionInfo camProjInfo = {45.f, 0.02f, 500.f};
+#else
+static const CameraProjectionInfo camProjInfo = {glm::radians(45.f), 0.02f, 500.f};
+
+#endif
+static glm::mat4 camProjMtx;
 
 constexpr size_t MAX_BUFFER_OBJS = 256;
 constexpr size_t MAX_VERT_ARRAYS = 128;
@@ -82,6 +92,9 @@ static size_t getImageInd(const cgltf_image* image) {
 }
 static size_t getMaterialInd(const cgltf_material* material) {
     return (size_t)(material - parsedData->materials);
+}
+static size_t getMeshInd(const cgltf_mesh* mesh) {
+    return (size_t)(mesh - parsedData->meshes);
 }
 
 static const char* getCameraName(int ind) {
@@ -241,31 +254,65 @@ static void imguiPrimitive(const cgltf_primitive& prim)
     }
 }
 
-static void drawSceneNodeRecursive(const cgltf_node* node, const glm::mat4& parentMat = glm::mat4(1.0))
+static void drawSceneNodeRecursive(const cgltf_node& node, const glm::mat4& parentMat = glm::mat4(1.0))
 {
-    return; // DISABLED
-    if(node->mesh)
+    //return; // DISABLED
+    const glm::mat4 modelMat = parentMat * glm::make_mat4(node.matrix);
+    if(node.mesh)
     {
-        glm::mat4 modelMat = parentMat * glm::make_mat4(node->matrix);
-        CArray<cgltf_primitive> primitives(node->mesh->primitives, node->mesh->primitives_count);
-        for(const cgltf_primitive& prim : primitives)
+        const glm::mat4 modelViewMat = orbitCam.viewMtx() * modelMat;
+        const glm::mat3 modelViewMat3 = modelViewMat;
+        const glm::mat4 modelViewProj = camProjMtx * modelViewMat;
+        CArray<cgltf_primitive> primitives(node.mesh->primitives, node.mesh->primitives_count);
+        const u32* vaos = gpu::vaos.begin() + gpu::meshPrimsVaos[getMeshInd(node.mesh)];
+        for(size_t i = 0; i < primitives.size(); i++)
         {
-            //ImGui::Text("Type: %s", cgltfTypeStr(prim.type));
-            //prim.attributes->
+            const cgltf_primitive& prim = primitives[i];
+            const u32 vao = vaos[i];
+            if(prim.material->has_pbr_metallic_roughness)
+            {
+                auto& shader = gpu::shaderPbrMetallic();
+                glUseProgram(shader.prog);
+                glUniformMatrix4fv(shader.unifLocs.modelViewProj, 1, GL_FALSE, &modelViewProj[0][0]);
+                glUniformMatrix3fv(shader.unifLocs.modelView3, 1, GL_FALSE, &modelViewMat3[0][0]);
+                glBindVertexArray(vao);
+                if(prim.indices) {
+                    glDrawElements(
+                       cgltfPrimTypeToGl(prim.type),
+                       prim.indices->count,
+                       cgltfComponentTypeToGl(prim.indices->component_type),
+                       (void*)prim.indices->buffer_view->offset
+                    );
+                }
+                else {
+                    glDrawArrays(cgltfPrimTypeToGl(prim.type), 0, prim.attributes->data->count);
+                }
+            }
+            else {
+                assert(false && "type of material not supported");
+            }
         }
+    }
+    CArray<cgltf_node*> children(node.children, node.children_count);
+    for(cgltf_node* child : children) {
+        assert(child);
+        drawSceneNodeRecursive(*child, modelMat);
     }
 }
 
 void drawScene()
 {
     glClearColor(0.1f, 0.2f, 0.1f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT);
-    return;
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     if(!parsedData)
         return;
-    CArray<cgltf_node*> nodes;
-    for(cgltf_node* node : nodes)
-        if(node->parent == nullptr)
+    //return;
+    int w, h;
+    glfwGetWindowSize(window, &w, &h);
+    camProjMtx = glm::perspective(camProjInfo.fovY, (float)w / h, camProjInfo.nearDist, camProjInfo.farDist);
+    CArray<cgltf_node> nodes(parsedData->nodes, parsedData->nodes_count);
+    for(const cgltf_node& node : nodes)
+        if(node.parent == nullptr)
             drawSceneNodeRecursive(node);
 }
 
@@ -743,6 +790,10 @@ static void createVaos()
             auto& prim = prims[primInd];
             const u32 vao = gpu::vaos[vaoBeginInd + primInd];
             glBindVertexArray(vao);
+            if(prim.indices) {
+                const u32 ebo = gpu::bos[getBufferInd(prim.indices->buffer_view->buffer)];
+                glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
+            }
             CArray<cgltf_attribute> attribs(prim.attributes, prim.attributes_count);
             u32 availableAttribsMask = 0;
             for(cgltf_attribute attrib : attribs) {
@@ -754,17 +805,21 @@ static void createVaos()
                 const cgltf_accessor* accessor = attrib.data;
                 const GLint numComponents = cgltfTypeNumComponents(accessor->type);
                 const GLenum componentType = cgltfComponentTypeToGl(accessor->component_type);
+                const u32 vbo = gpu::bos[getBufferInd(accessor->buffer_view->buffer)];
+                glBindBuffer(GL_ARRAY_BUFFER, vbo);
                 glVertexAttribPointer(attribInd, numComponents, componentType, (u8)accessor->normalized, accessor->stride, (void*)accessor->offset);
             }
             if(availableAttribsMask & ((u32)EAttrib::NORMAL | (u32)EAttrib::TANGENT))
             {
-                availableAttribsMask |= (u32)EAttrib::COTANGENT;
+                //availableAttribsMask |= (u32)EAttrib::COTANGENT;
                 // TODO
             }
-            auto checkAvailable = [availableAttribsMask](EAttrib eAttrib) { return (u32)eAttrib & availableAttribsMask; };
-            if(!)
-                assert(checkAvailable(EAttrib::POSITION) && checkAvailable(EAttrib::NORMAL));
-            if(!)
+            assert(availableAttribsMask & ((u32)EAttrib::POSITION | (u32)EAttrib::NORMAL));
+            if(availableAttribsMask & (u32)EAttrib::COLOR) {
+                const u32 attribInd = (u32) EAttrib::COLOR;
+                //glDisableVertexAttribArray() // attribs shuld be disabled by default
+                glVertexAttrib4f(attribInd, 1, 1, 1, 1); // here we set a default value (white) for the color vertex (it would be 0,0,0,1 otherwise)
+            }
         }
     }
 }
@@ -783,7 +838,7 @@ static void setupOrbitCamera()
     // we should compute here nice values so we can view the whole scene
     orbitCam.pitch = 0;
     orbitCam.heading = 0;
-    orbitCam.distance = 100;
+    orbitCam.distance = 3.f;
 }
 
 bool loadGltf(const char* path)
@@ -805,7 +860,7 @@ bool loadGltf(const char* path)
             }
         loadTextures();
         loadBufferObjects();
-        crateVaos();
+        createVaos();
         loadMaterials();
         setupOrbitCamera();
         return true;

@@ -62,7 +62,7 @@ bool Splitter(bool split_vertically, float thickness, float* size1, float* size2
     return SplitterBehavior(bb, id, split_vertically ? ImGuiAxis_X : ImGuiAxis_Y, size1, size2, min_size1, min_size2, 0.0f);
 }
 
-i32 gltfTypeNumComponents(cgltf_type type)
+i32 cgltfTypeNumComponents(cgltf_type type)
 {
     static const i32 lu[] = {
         -1,
@@ -84,6 +84,21 @@ GLenum cgltfComponentTypeToGl(cgltf_component_type type)
         GL_UNSIGNED_INT,
         GL_FLOAT
     };
+    return lu[type];
+}
+
+GLenum cgltfPrimTypeToGl(cgltf_primitive_type type)
+{
+    static GLenum lu[] = {
+        GL_POINTS,
+        GL_LINES,
+        GL_LINE_LOOP,
+        GL_LINE_STRIP,
+        GL_TRIANGLES,
+        GL_TRIANGLE_STRIP,
+        GL_TRIANGLE_FAN
+    };
+    assert(type < tl::size(lu));
     return lu[type];
 }
 

@@ -93,6 +93,9 @@ int main(int argc, char* argv[])
         fonts::robotoBold->DisplayOffset.y = -1.0f;
     }*/
 
+    glEnable(GL_DEPTH_TEST);
+    glDepthMask(GL_TRUE);
+
     gpu::buildShaders();
 
     glfwSetDropCallback(window, onFileDroped);

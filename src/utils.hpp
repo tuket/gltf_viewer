@@ -36,10 +36,16 @@ struct OrbitCameraInfo {
     glm::mat4 viewMtx()const;
 };
 
+struct CameraProjectionInfo {
+    float fovY;
+    float nearDist, farDist;
+};
+
 bool Splitter(bool split_vertically, float thickness, float* size1, float* size2, float min_size1, float min_size2, float splitter_long_axis_size = -1.0f);
 
 i32 cgltfTypeNumComponents(cgltf_type type);
 GLenum cgltfComponentTypeToGl(cgltf_component_type type);
+GLenum cgltfPrimTypeToGl(cgltf_primitive_type type);
 
 const char* cgltfPrimitiveTypeStr(cgltf_primitive_type type);
 const char* cgltfTypeStr(cgltf_type type);
