@@ -69,6 +69,8 @@ namespace mouse_handling
     static float prevX, prevY;
     void onMouseButton(GLFWwindow* window, int button, int action, int mods)
     {
+        if(ImGui::GetIO().WantCaptureMouse)
+            return; // the mouse is captured by imgui
         if(button == GLFW_MOUSE_BUTTON_LEFT)
             pressed = action == GLFW_PRESS;
     }
@@ -95,6 +97,8 @@ namespace mouse_handling
     }
     void onMouseWheel(GLFWwindow* window, double dx, double dy)
     {
+        if(ImGui::GetIO().WantCaptureMouse)
+            return; // the mouse is captured by imgui
         const float speed = 1.04f;
         orbitCam.distance *= pow(speed, (float)dy);
         orbitCam.distance = glm::max(orbitCam.distance, 0.01f);
