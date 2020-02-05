@@ -23,7 +23,7 @@ using tl::CArray;
 
 extern GLFWwindow* window;
 
-static CStr openedFilePath = "";
+static Str openedFilePath = "";
 static cgltf_data* parsedData = nullptr;
 static cgltf_node* selectedNode = nullptr;
 static i32 selectedCamera = -1; // -1 is the default orbit camera, indices >=0 are indices of the gltf camera
@@ -308,12 +308,9 @@ static void drawSceneNodeRecursive(const cgltf_node& node, const glm::mat4& pare
         {
             const cgltf_primitive& prim = primitives[i];
             const u32 vao = vaos[i];
-            if(prim.material->has_pbr_metallic_roughness)
+
+            auto draw = [&]
             {
-                auto& shader = gpu::shaderPbrMetallic();
-                glUseProgram(shader.prog);
-                glUniformMatrix4fv(shader.unifLocs.modelViewProj, 1, GL_FALSE, &modelViewProj[0][0]);
-                glUniformMatrix3fv(shader.unifLocs.modelView3, 1, GL_FALSE, &modelViewMat3[0][0]);
                 glBindVertexArray(vao);
                 if(prim.indices) {
                     glDrawElements(
@@ -326,12 +323,34 @@ static void drawSceneNodeRecursive(const cgltf_node& node, const glm::mat4& pare
                 else {
                     glDrawArrays(cgltfPrimTypeToGl(prim.type), 0, prim.attributes->data->count);
                 }
+            };
+            auto uploadCommonUniforms = [&](const ShaderData& shader)
+            {
+                glUniformMatrix4fv(shader.unifLocs.modelViewProj, 1, GL_FALSE, &modelViewProj[0][0]);
+                glUniformMatrix3fv(shader.unifLocs.modelView3, 1, GL_FALSE, &modelViewMat3[0][0]);
+            };
+
+            if(prim.material == nullptr)
+            {
+                // if there is no material we will use a pbr-metallic material with some defaults
+                auto& shader = gpu::shaderPbrMetallic();
+                glUseProgram(shader.prog);
+                uploadCommonUniforms(shader);
+                draw();
+            }
+            else if(prim.material->has_pbr_metallic_roughness)
+            {
+                auto& shader = gpu::shaderPbrMetallic();
+                glUseProgram(shader.prog);
+                uploadCommonUniforms(shader);
+                draw();
             }
             else {
                 assert(false && "type of material not supported");
             }
         }
     }
+
     CArray<cgltf_node*> children(node.children, node.children_count);
     for(cgltf_node* child : children) {
         assert(child);
@@ -713,7 +732,7 @@ void drawGui()
     }
 
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(1,1));
-    tl::toStringBuffer(scratch.str, openedFilePath,"##0");
+    tl::toStringBuffer(scratch.str, openedFilePath, "##0");
     ImGui::Begin(scratch.str);
     ImGui::PopStyleVar();
 
