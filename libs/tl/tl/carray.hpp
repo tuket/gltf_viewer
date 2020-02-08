@@ -16,6 +16,8 @@ public:
     Array(T (&data)[N]);
     Array(Array& o);
     Array(const Array& o);
+    operator T*() { return _data; }
+    operator const T*()const { return _data; }
 
     T& operator[](size_t i);
     const T& operator[](size_t i)const;
@@ -33,7 +35,6 @@ private:
     T* _data;
     size_t _size;
 };
-
 
 // ---------------------------------------------------------------------------------------------
 template <typename T>

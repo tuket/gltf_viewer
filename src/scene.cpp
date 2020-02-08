@@ -45,7 +45,9 @@ constexpr size_t MAX_TOTAL_PRIMITIVES = 1023;
 // scene gpu resources
 namespace gpu
 {
-static u32 metallicShader = 0;
+static u32 basicSampler;
+static u32 whiteTexture;
+static u32 blueTexture;
 static FVector<u32, MAX_BUFFER_OBJS> bos;
 static FVector<u32, MAX_VERT_ARRAYS> vaos;
 static FVector<u32, MAX_TOTAL_PRIMITIVES+1> meshPrimsVaos; // for mesh i, we can find here, at index i, the beginning of the vaos range, and at i+1 the end of that range
@@ -61,6 +63,8 @@ namespace imgui_state
 static float textureHeights[MAX_TEXTURES];
 struct MaterialTexturesHeights { float color; float metallicRoughness; };
 static MaterialTexturesHeights materialTexturesHeights[MAX_MATERIALS];
+static u64 lightEnableBits = -1;
+static i32 selectedSceneInd = 0;
 }
 
 namespace mouse_handling
@@ -109,11 +113,27 @@ static void freeSceneGpuResources()
 {
     using namespace gpu;
     glDeleteBuffers(bos.size(), bos.begin());
-    glad_glDeleteVertexArrays(vaos.size(), vaos.begin());
+    glDeleteVertexArrays(vaos.size(), vaos.begin());
     glDeleteTextures(textures.size(), textures.begin());
 }
 
-i32 selectedSceneInd = 0;
+void createBasicTextures()
+{
+    glGenSamplers(1, &gpu::basicSampler);
+    glSamplerParameteri(gpu::basicSampler, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glSamplerParameteri(gpu::basicSampler, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+
+    glGenTextures(2, &gpu::whiteTexture);
+
+    const u8 white[3] = {255, 255, 255};
+    glBindTexture(GL_TEXTURE_2D, gpu::whiteTexture);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 1, 1, 0, GL_RGB, GL_UNSIGNED_BYTE, white);
+
+    const u8 blue[3] = {0, 0, 255};
+    glBindTexture(GL_TEXTURE_2D, gpu::blueTexture);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 1, 1, 0, GL_RGB, GL_UNSIGNED_BYTE, blue);
+}
+
 
 static size_t getBufferInd(const cgltf_buffer* buffer) {
     return (size_t)(buffer - parsedData->buffers);
@@ -145,8 +165,8 @@ static const char* getCameraName(int ind) {
         return "[DEFAULT ORBIT]";
     assert(ind < (int)parsedData->cameras_count);
     const char* name = parsedData->cameras[ind].name;
-    tl::toStringBuffer(scratch.str, "%d) %s", (name ? name : "(null)"));
-    return scratch.str;
+    tl::toStringBuffer(scratchStr(), "%d) %s", (name ? name : "(null)"));
+    return scratchStr();
 }
 
 static void imguiTexture(size_t textureInd, float* height)
@@ -187,8 +207,8 @@ static void imguiMaterial(const cgltf_material& material)
         if(props.base_color_texture.texture)
         {
             const size_t texInd = getTextureInd(props.base_color_texture.texture);
-            tl::toStringBuffer(scratch.str, "Color texture: ", i, " - ", gpu::textureSizes[texInd].x, "x", gpu::textureSizes[texInd].y);
-            if(ImGui::TreeNode(scratch.str)) {
+            tl::toStringBuffer(scratchStr(), "Color texture: ", i, " - ", gpu::textureSizes[texInd].x, "x", gpu::textureSizes[texInd].y);
+            if(ImGui::TreeNode(scratchStr())) {
                 imguiTextureView(props.base_color_texture, &imgui_state::materialTexturesHeights[i].color);
                 ImGui::TreePop();
             }
@@ -196,8 +216,8 @@ static void imguiMaterial(const cgltf_material& material)
         if(props.metallic_roughness_texture.texture)
         {
             const size_t texInd = getTextureInd(props.metallic_roughness_texture.texture);
-            tl::toStringBuffer(scratch.str, "Metallic-roughness texture: ", i, " - ", gpu::textureSizes[texInd].x, "x", gpu::textureSizes[texInd].y);
-            if(ImGui::TreeNode(scratch.str)) {
+            tl::toStringBuffer(scratchStr(), "Metallic-roughness texture: ", i, " - ", gpu::textureSizes[texInd].x, "x", gpu::textureSizes[texInd].y);
+            if(ImGui::TreeNode(scratchStr())) {
                 imguiTextureView(props.metallic_roughness_texture, &imgui_state::materialTexturesHeights[i].metallicRoughness);
                 ImGui::TreePop();
             }
@@ -297,6 +317,33 @@ static void imguiPrimitive(const cgltf_primitive& prim)
     }
 }
 
+static void imguiColor(const float (&color) [3])
+{
+    ImGui::TextColored(ImColor(color[0], color[1], color[2]), "(%f, %f, %f)", color[0], color[1], color[2]);
+}
+
+static void imguiLight(const cgltf_light& light)
+{
+    static const char* lightTypeStrs[] = {
+        "invalid",
+        "directional",
+        "point",
+        "spot"
+    };
+    ImGui::Text("Name: %s", light.name);
+    ImGui::Text("Color: ");
+    ImGui::SameLine();
+    imguiColor(light.color);
+    ImGui::Text("Intensity: %f", light.intensity);
+    ImGui::Text("Range: %f", light.range);
+    assert((size_t)light.type < tl::size(lightTypeStrs));
+    ImGui::Text("Type: %s", lightTypeStrs[light.type]);
+    if(light.type == cgltf_light_type_spot) {
+        ImGui::Text("Inner cone angle: %f", light.spot_inner_cone_angle);
+        ImGui::Text("Outer cone angle: %f", light.spot_outer_cone_angle);
+    }
+}
+
 static void drawSceneNodeRecursive(const cgltf_node& node, const glm::mat4& parentMat = glm::mat4(1.0))
 {
     //return; // DISABLED
@@ -304,7 +351,7 @@ static void drawSceneNodeRecursive(const cgltf_node& node, const glm::mat4& pare
     if(node.mesh)
     {
         const glm::mat4 modelViewMat = orbitCam.viewMtx() * modelMat;
-        const glm::mat3 modelViewMat3 = modelViewMat;
+        const glm::mat3 modelMat3 = modelMat;
         const glm::mat4 modelViewProj = camProjMtx * modelViewMat;
         CArray<cgltf_primitive> primitives(node.mesh->primitives, node.mesh->primitives_count);
         const u32* vaos = gpu::vaos.begin() + gpu::meshPrimsVaos[getMeshInd(node.mesh)];
@@ -315,6 +362,13 @@ static void drawSceneNodeRecursive(const cgltf_node& node, const glm::mat4& pare
 
             auto draw = [&]
             {
+                if(auto tex = prim.material->normal_texture.texture) {
+
+                }
+                else {
+                    glActiveTexture(GL_TEXTURE0 + (u32)ETexUnit::NORMAL);
+                    glBindTexture(GL_TEXTURE_2D, gpu::blueTexture);
+                }
                 glBindVertexArray(vao);
                 if(prim.indices) {
                     glDrawElements(
@@ -331,7 +385,7 @@ static void drawSceneNodeRecursive(const cgltf_node& node, const glm::mat4& pare
             auto uploadCommonUniforms = [&](const ShaderData& shader)
             {
                 glUniformMatrix4fv(shader.unifLocs.modelViewProj, 1, GL_FALSE, &modelViewProj[0][0]);
-                glUniformMatrix3fv(shader.unifLocs.modelView3, 1, GL_FALSE, &modelViewMat3[0][0]);
+                glUniformMatrix3fv(shader.unifLocs.modelMat3, 1, GL_FALSE, &modelMat3[0][0]);
             };
 
             if(prim.material == nullptr)
@@ -417,30 +471,30 @@ static void drawGui_scenesTab()
     Splitter(true, 4, &leftPanelSize, &rightPanelSize, 0, 0);
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(4, 4));
     ImGui::BeginChild("left_panel", {leftPanelSize, -1}, true, ImGuiWindowFlags_AlwaysUseWindowPadding);
-    auto sceneComboDisplayStr = [](i32 sceneInd) -> CStr {
+    auto sceneComboDisplayStr = [](i32 sceneInd) -> const char* {
         const char* sceneName = "";
         if(sceneInd != -1) {
             sceneName = parsedData->scenes[sceneInd].name;
             sceneName = sceneName ? sceneName : "";
-            tl::toStringBuffer(scratch.str, sceneInd, ") ", sceneName);
+            tl::toStringBuffer(scratchStr(), sceneInd, ") ", sceneName);
         }
-        return scratch.str;
+        return scratchStr();
     };
-    if(ImGui::BeginCombo("scene", sceneComboDisplayStr(selectedSceneInd)))
+    if(ImGui::BeginCombo("scene", sceneComboDisplayStr(imgui_state::selectedSceneInd)))
     {
         for(i32 sceneInd = 0; sceneInd < (i32)parsedData->scenes_count; sceneInd++)
         {
             const auto& scene = parsedData->scenes[sceneInd];
             ImGui::PushID((void*)&scene);
             if (ImGui::Selectable(sceneComboDisplayStr(sceneInd)))
-                selectedSceneInd = sceneInd;
+                imgui_state::selectedSceneInd = sceneInd;
             ImGui::PopID();
         }
         ImGui::EndCombo();
     }
-    if(selectedSceneInd != -1)
+    if(imgui_state::selectedSceneInd != -1)
     {
-        const cgltf_scene& selectedScene = parsedData->scenes[selectedSceneInd];
+        const cgltf_scene& selectedScene = parsedData->scenes[imgui_state::selectedSceneInd];
         for(size_t nodeInd = 0; nodeInd < selectedScene.nodes_count; nodeInd++)
         if(selectedScene.nodes[nodeInd]->parent == nullptr)
             sceneNodeGuiRecusive(selectedScene.nodes[nodeInd]);
@@ -465,8 +519,8 @@ static void drawGui_meshesTab()
     for(size_t i = 0; i < numMeshes; i++)
     {
         auto& mesh = meshes[i];
-        tl::toStringBuffer(scratch.str, i, ") ", mesh.name ? mesh.name : "");
-        if(ImGui::CollapsingHeader(scratch.str))
+        tl::toStringBuffer(scratchStr(), i, ") ", mesh.name ? mesh.name : "");
+        if(ImGui::CollapsingHeader(scratchStr()))
         {
             ImGui::TreePush();
             if(ImGui::TreeNode((void*)&mesh, "Primitives (%ld)", mesh.primitives_count))
@@ -516,13 +570,13 @@ static void drawGui_texturesTab()
         }*/
     };
     tl::CArray<cgltf_texture> textures(parsedData->textures, parsedData->textures_count);
-    tl::toStringBuffer(scratch.str, "Textures (", textures.size(), ")");
-    if(ImGui::CollapsingHeader(scratch.str))
+    tl::toStringBuffer(scratchStr(), "Textures (", textures.size(), ")");
+    if(ImGui::CollapsingHeader(scratchStr()))
     for(size_t i = 0; i < textures.size(); i++)
     {
         auto& texture = textures[i];
-        tl::toStringBuffer(scratch.str, i, ") ", texture.name ? texture.name : "");
-        if(ImGui::TreeNode((void*)&texture, "%s", scratch.str))
+        tl::toStringBuffer(scratchStr(), i, ") ", texture.name ? texture.name : "");
+        if(ImGui::TreeNode((void*)&texture, "%s", scratch.ptr<char>()))
         {
             if(texture.image == nullptr) {
                 ImGui::Text("image: (null)");
@@ -544,8 +598,8 @@ static void drawGui_texturesTab()
     }
 
     tl::CArray<cgltf_image> images(parsedData->images, parsedData->images_count);
-    tl::toStringBuffer(scratch.str, "Images (", images.size(), ")");
-    if(ImGui::CollapsingHeader(scratch.str))
+    tl::toStringBuffer(scratchStr(), "Images (", images.size(), ")");
+    if(ImGui::CollapsingHeader(scratchStr()))
     for(size_t i = 0; i < images.size(); i++)
     if(ImGui::TreeNode((void*)&images[i], "%ld", i))
     {
@@ -554,8 +608,8 @@ static void drawGui_texturesTab()
     }
 
     tl::CArray<cgltf_sampler> samplers(parsedData->samplers, parsedData->samplers_count);
-    tl::toStringBuffer(scratch.str, "Samplers (", samplers.size(), ")");
-    if(ImGui::CollapsingHeader(scratch.str))
+    tl::toStringBuffer(scratchStr(), "Samplers (", samplers.size(), ")");
+    if(ImGui::CollapsingHeader(scratchStr()))
     for(size_t i = 0; i < samplers.size(); i++)
     if(ImGui::TreeNode((void*)&samplers[i], "%ld", i))
     {
@@ -577,8 +631,8 @@ static void drawGui_buffersTab()
             sizeXBytes /= 1024;
             unitInd++;
         }
-        tl::toStringBuffer(scratch.str, i, ") ", buffer.uri ? buffer.uri : "", sizeXBytes, unitsStrs[unitInd]);
-        if(ImGui::CollapsingHeader(scratch.str))
+        tl::toStringBuffer(scratchStr(), i, ") ", buffer.uri ? buffer.uri : "", sizeXBytes, unitsStrs[unitInd]);
+        if(ImGui::CollapsingHeader(scratchStr()))
         {
             // TODO
         }
@@ -591,8 +645,8 @@ static void drawGui_bufferViewsTab()
     for(size_t i = 0; i < views.size(); i++)
     {
         const cgltf_buffer_view& view = views[i];
-        tl::toStringBuffer(scratch.str, i);
-        if(ImGui::CollapsingHeader(scratch.str))
+        tl::toStringBuffer(scratchStr(), i);
+        if(ImGui::CollapsingHeader(scratchStr()))
         {
             ImGui::TreePush();
             static const char* typeStrs[] = {"invalid", "indices", "vertices"};
@@ -612,8 +666,8 @@ static void drawGui_accessorsTab()
     for(size_t i = 0; i < accessors.size(); i++)
     {
         const cgltf_accessor& accessor = accessors[i];
-        tl::toStringBuffer(scratch.str, i);
-        if(ImGui::CollapsingHeader(scratch.str))
+        tl::toStringBuffer(scratchStr(), i);
+        if(ImGui::CollapsingHeader(scratchStr()))
         {
             ImGui::TreePush();
             imguiAccessor(accessor);
@@ -628,8 +682,8 @@ static void drawGui_materialsTab()
     for(size_t i = 0; i < materials.size(); i++)
     {
         const cgltf_material& material = materials[i];
-        tl::toStringBuffer(scratch.str, i, ") ", material.name ? material.name : "");
-        if(ImGui::CollapsingHeader(scratch.str))
+        tl::toStringBuffer(scratchStr(), i, ") ", material.name ? material.name : "");
+        if(ImGui::CollapsingHeader(scratchStr()))
         {
             ImGui::TreePush();
             imguiMaterial(material);
@@ -670,8 +724,8 @@ static void drawGui_samplers()
     CArray<cgltf_sampler> samplers (parsedData->samplers, parsedData->samplers_count);
     for(size_t i = 0; i < samplers.size(); i++)
     {
-        tl::toStringBuffer(scratch.str, i);
-        if(ImGui::CollapsingHeader(scratch.str))
+        tl::toStringBuffer(scratchStr(), i);
+        if(ImGui::CollapsingHeader(scratchStr()))
         {
             ImGui::TreePush();
             const cgltf_sampler& sampler = samplers[i];
@@ -694,7 +748,7 @@ static void drawGui_cameras()
         {
             ImGui::PushID((void*)i);
             if (ImGui::Selectable(getCameraName(i)))
-                selectedSceneInd = i;
+                imgui_state::selectedSceneInd = i;
             ImGui::PopID();
         }
         ImGui::EndCombo();
@@ -727,6 +781,19 @@ static void drawGui_cameras()
     }
 }
 
+static void drawGui_lights()
+{
+    CArray<cgltf_light> lights(parsedData->lights, parsedData->lights_count);
+    for(size_t i = 0; i < lights.size(); i++)
+    {
+        const cgltf_light& light = lights[i];
+        if(ImGui::TreeNode((void*)&parsedData->lights, "%ld) %s", i, light.name)) {
+            imguiLight(light);
+            ImGui::TreePop();
+        }
+    }
+}
+
 void drawGui()
 {
     if(!parsedData) {
@@ -736,8 +803,8 @@ void drawGui()
     }
 
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(1,1));
-    tl::toStringBuffer(scratch.str, openedFilePath, "##0");
-    ImGui::Begin(scratch.str);
+    tl::toStringBuffer(scratchStr(), openedFilePath, "##0");
+    ImGui::Begin(scratchStr());
     ImGui::PopStyleVar();
 
     if (ImGui::BeginTabBar("TopTabBar"))
@@ -776,6 +843,10 @@ void drawGui()
         }
         if(ImGui::BeginTabItem("Cameras")) {
             drawGui_cameras();
+            ImGui::EndTabItem();
+        }
+        if(ImGui::BeginTabItem("Lights")) {
+            drawGui_lights();
             ImGui::EndTabItem();
         }
         ImGui::EndTabBar();
@@ -858,25 +929,75 @@ static void createVaos()
             }
             CArray<cgltf_attribute> attribs(prim.attributes, prim.attributes_count);
             u32 availableAttribsMask = 0;
-            for(cgltf_attribute attrib : attribs) {
+            u8 attribIdToInd[(int)EAttrib::COUNT];
+            for(size_t attribInd = 0; attribInd < attribs.size(); attribInd++)
+            {
+                const cgltf_attribute& attrib = attribs[attribInd];
                 EAttrib eAttrib = strToEAttrib(attrib.name);
                 assert(eAttrib != EAttrib::COUNT);
-                const u32 attribInd = (u32)eAttrib;
-                availableAttribsMask |= 1 << attribInd;
-                glEnableVertexAttribArray(attribInd);
+                const u32 attribId = (u32)eAttrib;
+                availableAttribsMask |= 1 << attribId;
+                glEnableVertexAttribArray(attribId);
                 const cgltf_accessor* accessor = attrib.data;
                 const GLint numComponents = cgltfTypeNumComponents(accessor->type);
                 const GLenum componentType = cgltfComponentTypeToGl(accessor->component_type);
                 const u32 vbo = gpu::bos[getBufferInd(accessor->buffer_view->buffer)];
                 glBindBuffer(GL_ARRAY_BUFFER, vbo);
-                glVertexAttribPointer(attribInd, numComponents, componentType, (u8)accessor->normalized, accessor->stride, (void*)accessor->offset);
+                glVertexAttribPointer(attribId, numComponents, componentType, (u8)accessor->normalized, accessor->stride, (void*)accessor->offset);
+                attribIdToInd[attribId] = (u8)attribInd;
             }
-            if(availableAttribsMask & ((u32)EAttrib::NORMAL | (u32)EAttrib::TANGENT))
-            {
-                //availableAttribsMask |= (u32)EAttrib::COTANGENT;
-                // TODO
+            assert((availableAttribsMask & (1U << (u32)EAttrib::POSITION)) &&
+                   (availableAttribsMask & (1U << (u32)EAttrib::NORMAL)));
+
+            { // setup tangents and cotangents buffer
+                const cgltf_accessor& normalAttribData = *attribs[attribIdToInd[(u32)EAttrib::NORMAL]].data;
+                assert(normalAttribData.type == cgltf_type_vec3 && normalAttribData.component_type == cgltf_component_type_r_32f);
+                const size_t numVerts = normalAttribData.count;
+                const bool gottaGenerateTangets = (availableAttribsMask & (1U << (u32)EAttrib::TANGENT)) == 0;
+                const size_t tangentsNumBytes = sizeof(glm::vec3) * numVerts;
+                const size_t bufSize = tangentsNumBytes * (gottaGenerateTangets ? 2 : 1);
+                scratch.growIfNeeded(bufSize);
+                u32 vbo;
+                glGenBuffers(1, &vbo);
+                gpu::bos.push_back(vbo);
+                glBindBuffer(GL_ARRAY_BUFFER, vbo);
+                auto normals = (const glm::vec3*)normalAttribData.buffer_view->buffer->data + normalAttribData.offset;
+                glm::vec3* tangents;
+                if(gottaGenerateTangets)
+                {
+                    // generate tangents, if there aren't any
+                    tangents = scratch.ptr<glm::vec3>();
+                    for(size_t i = 0; i < numVerts; i++) {
+                        const glm::vec3& n = normals[i];
+                        // find some vector perpendicular to n
+                        glm::vec3 x {1, 0, 0};
+                        if(abs(dot(x, n)) > 0.99f)
+                            x = {0, 1, 0};
+                        tangents[i] = cross(n, x);
+                    }
+                    glEnableVertexAttribArray((u32)EAttrib::TANGENT);
+                    glVertexAttribPointer((u32)EAttrib::TANGENT, 3, GL_FLOAT, GL_FALSE, 0, nullptr);
+                }
+                else {
+                    const cgltf_accessor& tangentAttribData = *attribs[attribIdToInd[(u32)EAttrib::TANGENT]].data;
+                    tangents = (glm::vec3*)tangentAttribData.buffer_view->buffer->data;
+                    assert(numVerts == tangentAttribData.count);
+                    assert(tangentAttribData.type == cgltf_type_vec3 && tangentAttribData.component_type == cgltf_component_type_r_32f);
+                }
+
+                { // generate cotangents
+                    glm::vec3* cotangents = scratch.ptr<glm::vec3>() + (gottaGenerateTangets ? numVerts : 0);
+                    for(size_t i = 0; i < numVerts; i++)
+                        cotangents[i] = cross(normals[i], tangents[i]);
+
+                    glEnableVertexAttribArray((u32)EAttrib::COTANGENT);
+                    glVertexAttribPointer((u32)EAttrib::COTANGENT, 3, GL_FLOAT, GL_FALSE,
+                        0, (void*)(gottaGenerateTangets ? tangentsNumBytes : 0));
+                }
+
+                glBufferData(GL_ARRAY_BUFFER, bufSize, scratch.ptr<u8>(), GL_STATIC_DRAW);
             }
-            assert(availableAttribsMask & ((u32)EAttrib::POSITION | (u32)EAttrib::NORMAL));
+
             if(availableAttribsMask & (u32)EAttrib::COLOR) {
                 const u32 attribInd = (u32) EAttrib::COLOR;
                 //glDisableVertexAttribArray() // attribs shuld be disabled by default
@@ -911,13 +1032,16 @@ bool loadGltf(const char* path)
     cgltf_result result = cgltf_parse_file(&options, path, &newParsedData);
     if(result == cgltf_result_success)
     {
-        cgltf_free(parsedData);
+        if(parsedData) {
+            freeSceneGpuResources();
+            cgltf_free(parsedData);
+        }
         parsedData = newParsedData;
         cgltf_load_buffers(&options, parsedData, path);
-        selectedSceneInd = -1;
+        imgui_state::selectedSceneInd = -1;
         for(u32 i = 0; i < parsedData->scenes_count; i++)
             if(parsedData->scene == &parsedData->scenes[i]) {
-                selectedSceneInd = i;
+                imgui_state::selectedSceneInd = i;
                 break;
             }
         loadTextures();

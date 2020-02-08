@@ -97,6 +97,7 @@ int main(int argc, char* argv[])
     glDepthMask(GL_TRUE);
 
     gpu::buildShaders();
+    createBasicTextures();
 
     glfwSetMouseButtonCallback(window, mouse_handling::onMouseButton);
     glfwSetCursorPosCallback(window, mouse_handling::onMouseMove);

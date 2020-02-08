@@ -4,7 +4,7 @@
 
 struct UniformLocations {
     i32 modelViewProj,
-        modelView3,
+        modelMat3,
         albedoTexture,
         normalTexture;
 };

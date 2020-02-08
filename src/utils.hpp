@@ -5,15 +5,31 @@
 #include <glm/mat4x4.hpp>
 #include <glm/gtc/constants.hpp>
 #include <glad/glad.h>
+#include <tl/carray.hpp>
 
 constexpr float PI = glm::pi<float>();
 
-constexpr int SCRATCH_BUFFER_SIZE = 1*1024*1024;
-union ScratchBuffer {
-    u8 buffer[SCRATCH_BUFFER_SIZE];
-    char str[SCRATCH_BUFFER_SIZE];
+class ScratchBuffer {
+public:
+    ScratchBuffer();
+    u8* data() { return _data; } // returns 16 byte aligned ptr
+    size_t size()const { return _size; }
+    void growIfNeeded(size_t size);
+    template <typename T>
+    T* ptr() {return reinterpret_cast<T*>(_data); }
+    template <typename T>
+    tl::Array<T> asArray() {
+        return tl::Array<T>(reinterpret_cast<T*>(_data), _size / sizeof(T));
+    }
+    char* str() { return ptr<char>(); }
+private:
+    size_t _size;
+    u8* _nonAlignedData;
+    u8* _data;
 };
 extern ScratchBuffer scratch;
+static inline tl::Array<char> scratchStr() { return scratch.asArray<char>(); }
+static inline tl::Array<u8> scratchU8() { return scratch.asArray<u8>(); }
 
 enum class EAttrib : u8 {
     POSITION = 0,
@@ -29,6 +45,13 @@ enum class EAttrib : u8 {
 };
 CStr toStr(EAttrib type);
 EAttrib strToEAttrib(CStr str);
+
+enum class ETexUnit : u8 {
+    ALBEDO,
+    NORMAL,
+    PHYSICS,
+    COUNT
+};
 
 struct OrbitCameraInfo {
     float heading, pitch; // in radians

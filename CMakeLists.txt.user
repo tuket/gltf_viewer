@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE QtCreatorProject>
-<!-- Written by QtCreator 4.11.0, 2020-02-05T23:22:07. -->
+<!-- Written by QtCreator 4.11.0, 2020-02-08T20:41:01. -->
 <qtcreator>
  <data>
   <variable>EnvironmentId</variable>
@@ -1066,7 +1066,7 @@
     <value type="QString" key="ProjectExplorer.ProjectConfiguration.DisplayName">gltf_viewer</value>
     <value type="QString" key="ProjectExplorer.ProjectConfiguration.Id">CMakeProjectManager.CMakeRunConfiguration.gltf_viewer</value>
     <value type="QString" key="ProjectExplorer.RunConfiguration.BuildKey">gltf_viewer</value>
-    <value type="QString" key="RunConfiguration.Arguments">/home/tuket/models/monkey.glb
+    <value type="QString" key="RunConfiguration.Arguments">/home/tuket/models/box.glb
 </value>
     <value type="bool" key="RunConfiguration.Arguments.multi">false</value>
     <value type="QString" key="RunConfiguration.OverrideDebuggerStartup"></value>

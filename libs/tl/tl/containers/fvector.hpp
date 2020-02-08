@@ -28,6 +28,7 @@ public:
     constexpr size_t capacity()const { return N; }
 
     void resize(size_t n);
+    void push_back(const T& x);
     void push_back(T&& x);
     void pop_back();
 
@@ -72,9 +73,16 @@ void FVector<T, N>::resize(size_t n) {
 }
 
 template <typename T, size_t N>
+void FVector<T, N>::push_back(const T& x) {
+    assert(_size < N);
+    _init(_size, x);
+    _size++;
+}
+
+template <typename T, size_t N>
 void FVector<T, N>::push_back(T&& x) {
     assert(_size < N);
-    _init(_size, tl::forward<T>(x));
+    _init(_size, tl::move<T>(x));
     _size++;
 }
 

@@ -9,6 +9,23 @@
 
 ScratchBuffer scratch;
 
+ScratchBuffer::ScratchBuffer()
+    : _size(0)
+    , _nonAlignedData(nullptr)
+{
+    growIfNeeded(4 * 1024 * 1024 - 16);
+}
+
+void ScratchBuffer::growIfNeeded(size_t size)
+{
+    if(size > _size) {
+        _size = size;
+        delete[] _nonAlignedData;
+        _nonAlignedData = new u8[size + 16];
+        _data = (u8*)((uintptr_t)_nonAlignedData & ~0xFULL);
+    }
+}
+
 CStr toStr(EAttrib type)
 {
     switch (type) {
@@ -155,30 +172,30 @@ const char* cgltfValueStr(cgltf_type type, const cgltf_float (&m)[16])
     switch(type)
     {
     case cgltf_type_scalar:
-        sprintf(scratch.str, "%f", m[0]);
+        sprintf(scratch.str(), "%f", m[0]);
         break;
     case cgltf_type_vec2:
-        sprintf(scratch.str, "{%f, %f}", m[0], m[1]);
+        sprintf(scratch.str(), "{%f, %f}", m[0], m[1]);
         break;
     case cgltf_type_vec3:
-        sprintf(scratch.str, "{%f, %f, %f}", m[0], m[1], m[2]);
+        sprintf(scratch.str(), "{%f, %f, %f}", m[0], m[1], m[2]);
         break;
     case cgltf_type_vec4:
-        sprintf(scratch.str, "{%f, %f, %f, %f}", m[0], m[1], m[2], m[3]);
+        sprintf(scratch.str(), "{%f, %f, %f, %f}", m[0], m[1], m[2], m[3]);
         break;
     case cgltf_type_mat2:
-        sprintf(scratch.str, "{{%f, %f}, {%f, %f}}", m[0], m[1], m[2], m[3]);
+        sprintf(scratch.str(), "{{%f, %f}, {%f, %f}}", m[0], m[1], m[2], m[3]);
         break;
     case cgltf_type_mat3:
-        sprintf(scratch.str, "{{%f, %f, %f}, {%f, %f, %f}, {%f, %f, %f}}", m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7], m[8]);
+        sprintf(scratch.str(), "{{%f, %f, %f}, {%f, %f, %f}, {%f, %f, %f}}", m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7], m[8]);
         break;
     case cgltf_type_mat4:
-        sprintf(scratch.str, "{{%f, %f, %f, %f}, {%f, %f, %f, %f}, {%f, %f, %f, %f}, {%f, %f, %f, %f}}", m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7], m[8], m[9], m[10], m[11], m[12], m[13], m[14], m[15]);
+        sprintf(scratch.str(), "{{%f, %f, %f, %f}, {%f, %f, %f, %f}, {%f, %f, %f, %f}, {%f, %f, %f, %f}}", m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7], m[8], m[9], m[10], m[11], m[12], m[13], m[14], m[15]);
         break;
     default:
-        sprintf(scratch.str, "invalid");
+        sprintf(scratch.str(), "invalid");
     }
-    return scratch.str;
+    return scratch.str();
 }
 
 const char* glMinFilterModeStr(int minFilterMode)

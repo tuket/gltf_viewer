@@ -89,6 +89,7 @@ public:
     CharT* end() { return _str + _size; }
 
     bool operator==(CStrT<CharT> o)const;
+    bool operator!=(CStrT<CharT> o)const { return !(*this == o); }
 
     StrT operator+(CStrT<CharT> o);
     StrT operator+(const CharT* o);
