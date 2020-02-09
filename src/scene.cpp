@@ -961,19 +961,22 @@ static void createVaos()
                 glGenBuffers(1, &vbo);
                 gpu::bos.push_back(vbo);
                 glBindBuffer(GL_ARRAY_BUFFER, vbo);
-                auto normals = (const glm::vec3*)normalAttribData.buffer_view->buffer->data + normalAttribData.offset;
+                auto normals = (const u8*)normalAttribData.buffer_view->buffer->data + normalAttribData.offset;
+                const size_t normalsStride = normalAttribData.stride ? normalAttribData.stride : sizeof(glm::vec3);
                 glm::vec3* tangents;
                 if(gottaGenerateTangets)
                 {
                     // generate tangents, if there aren't any
+                    auto normalPtr = normals;
                     tangents = scratch.ptr<glm::vec3>();
                     for(size_t i = 0; i < numVerts; i++) {
-                        const glm::vec3& n = normals[i];
+                        const glm::vec3& n = *reinterpret_cast<const glm::vec3*>(normalPtr);
                         // find some vector perpendicular to n
                         glm::vec3 x {1, 0, 0};
                         if(abs(dot(x, n)) > 0.99f)
                             x = {0, 1, 0};
                         tangents[i] = cross(n, x);
+                        normalPtr += normalsStride;
                     }
                     glEnableVertexAttribArray((u32)EAttrib::TANGENT);
                     glVertexAttribPointer((u32)EAttrib::TANGENT, 3, GL_FLOAT, GL_FALSE, 0, nullptr);
@@ -986,9 +989,13 @@ static void createVaos()
                 }
 
                 { // generate cotangents
+                    auto normalPtr = normals;
                     glm::vec3* cotangents = scratch.ptr<glm::vec3>() + (gottaGenerateTangets ? numVerts : 0);
-                    for(size_t i = 0; i < numVerts; i++)
-                        cotangents[i] = cross(normals[i], tangents[i]);
+                    for(size_t i = 0; i < numVerts; i++) {
+                        const glm::vec3 n = *reinterpret_cast<const glm::vec3*>(normalPtr);
+                        cotangents[i] = cross(n, tangents[i]);
+                        normalPtr += normalsStride;
+                    }
 
                     glEnableVertexAttribArray((u32)EAttrib::COTANGENT);
                     glVertexAttribPointer((u32)EAttrib::COTANGENT, 3, GL_FLOAT, GL_FALSE,
