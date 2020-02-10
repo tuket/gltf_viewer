@@ -5,7 +5,8 @@
 struct UniformLocations {
     i32 modelViewProj,
         modelMat3,
-        albedoTexture,
+        color,
+        colorTexture,
         normalTexture;
 };
 

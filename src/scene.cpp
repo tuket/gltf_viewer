@@ -362,13 +362,27 @@ static void drawSceneNodeRecursive(const cgltf_node& node, const glm::mat4& pare
 
             auto draw = [&]
             {
-                if(auto tex = prim.material->normal_texture.texture) {
+                auto& material = prim.material;
 
+                glActiveTexture(GL_TEXTURE0 + (u32)ETexUnit::ALBEDO);
+                if(material->has_pbr_metallic_roughness) {
+                    glUniform4fv(gpu::shaderPbrMetallic().unifLocs.color,
+                                 1, material->pbr_metallic_roughness.base_color_factor);
+                    if(auto tex = material->pbr_metallic_roughness.base_color_texture.texture)
+                        ;
+                    else
+                        glBindTexture(GL_TEXTURE_2D, gpu::whiteTexture);
                 }
-                else {
-                    glActiveTexture(GL_TEXTURE0 + (u32)ETexUnit::NORMAL);
+                else if(material->has_pbr_specular_glossiness) {
+                    assert("todo" && false);
+                }
+
+                glActiveTexture(GL_TEXTURE0 + (u32)ETexUnit::NORMAL);
+                if(auto tex = material->normal_texture.texture)
+                    ;
+                else
                     glBindTexture(GL_TEXTURE_2D, gpu::blueTexture);
-                }
+
                 glBindVertexArray(vao);
                 if(prim.indices) {
                     glDrawElements(

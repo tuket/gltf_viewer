@@ -16,6 +16,7 @@ static const char basicVertShader[] =
 R"GLSL(
 uniform mat3 u_modelMat3;
 uniform mat4 u_modelViewProj;
+uniform vec4 u_color;
 
 layout(location = 0) in vec3 a_pos;
 layout(location = 1) in vec3 a_normal;
@@ -40,7 +41,7 @@ void main()
     v_bitangent = u_modelMat3 * a_bitangent;
     v_texCoord0 = a_texCoord0;
     v_texCoord1 = a_texCoord1;
-    v_color = a_color;
+    v_color = u_color * a_color;
 }
 
 )GLSL";
@@ -49,7 +50,7 @@ static const char pbrMetallic[] =
 R"GLSL(
 layout(location = 0) out vec4 o_color;
 
-uniform sampler2D u_albedoTexture;
+uniform sampler2D u_colorTexture;
 uniform sampler2D u_normalTexture;
 uniform sampler2D u_metallicRoughnessTexture;
 uniform vec3 u_lightDir;
@@ -66,10 +67,10 @@ void main()
 {
     mat3 TBN = mat3(v_tangent, v_bitangent, v_normal);
     vec3 normal = TBN * texture(u_normalTexture, v_texCoord0).xyz;
-    vec3 albedo = texture(u_albedoTexture, v_texCoord0).rgb;
+    vec4 color = texture(u_colorTexture, v_texCoord0);
     o_color = vec4(
-        dot(normal, normalize(vec3(0.2, 1.0, 0.5))) * mix(vec3(1.0, 1.0, 1.0), albedo, 0.1),
-        1.0
+        dot(normal, normalize(vec3(0.2, 1.0, 0.5))) * color.rgb * v_color.rgb,
+        color.a * v_color.a
     );
     //o_color = vec4(v_texCoord0, 0.0, 1.0);
     //o_color = vec4(abs(v_normal), 1.0);
@@ -125,7 +126,8 @@ void findAllUnifLocations(ShaderData& data)
 {
    data.unifLocs.modelMat3 = glGetUniformLocation(data.prog, "u_modelMat3");
    data.unifLocs.modelViewProj = glGetUniformLocation(data.prog, "u_modelViewProj");
-//   data.unifLocs.albedoTexture = glGetUniformLocation(data.prog, "u_albedoTex");
+   data.unifLocs.color = glGetUniformLocation(data.prog, "u_color");
+//   data.unifLocs.colorTexture = glGetUniformLocation(data.prog, "u_colorTex");
 //   data.unifLocs.normalTexture = glGetUniformLocation(data.prog, "u_normalTex");
 }
 
@@ -162,7 +164,7 @@ bool buildShaders()
         findAllUnifLocations(data);
         glDeleteShader(fragShader);
         glUseProgram(data.prog);
-        glUniform1i(glGetUniformLocation(data.prog, "u_albedoTexture"), (i32)ETexUnit::ALBEDO);
+        glUniform1i(glGetUniformLocation(data.prog, "u_colorTexture"), (i32)ETexUnit::ALBEDO);
         glUniform1i(glGetUniformLocation(data.prog, "u_normalTexture"), (i32)ETexUnit::NORMAL);
         glUniform1i(glGetUniformLocation(data.prog, "u_metallicRoughnessTexture"), (i32)ETexUnit::PHYSICS);
     }
