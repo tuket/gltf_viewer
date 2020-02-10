@@ -67,10 +67,10 @@ void main()
 {
     mat3 TBN = mat3(v_tangent, v_bitangent, v_normal);
     vec3 normal = TBN * texture(u_normalTexture, v_texCoord0).xyz;
-    vec4 color = texture(u_colorTexture, v_texCoord0);
+    vec4 texColor = texture(u_colorTexture, v_texCoord0);
     o_color = vec4(
-        dot(normal, normalize(vec3(0.2, 1.0, 0.5))) * color.rgb * v_color.rgb,
-        color.a * v_color.a
+        dot(normal, normalize(vec3(0.2, 1.0, 0.5))) * mix(texColor.rgb * v_color.rgb, vec3(v_texCoord0, 0.0), 0.01),
+        texColor.a * v_color.a
     );
     //o_color = vec4(v_texCoord0, 0.0, 1.0);
     //o_color = vec4(abs(v_normal), 1.0);

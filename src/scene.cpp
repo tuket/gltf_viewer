@@ -955,9 +955,11 @@ static void createVaos()
                 const cgltf_accessor* accessor = attrib.data;
                 const GLint numComponents = cgltfTypeNumComponents(accessor->type);
                 const GLenum componentType = cgltfComponentTypeToGl(accessor->component_type);
+                const size_t offset = accessor->offset + accessor->buffer_view->offset;
                 const u32 vbo = gpu::bos[getBufferInd(accessor->buffer_view->buffer)];
                 glBindBuffer(GL_ARRAY_BUFFER, vbo);
-                glVertexAttribPointer(attribId, numComponents, componentType, (u8)accessor->normalized, accessor->stride, (void*)accessor->offset);
+                glVertexAttribPointer(attribId, numComponents, componentType,
+                    (u8)accessor->normalized, accessor->stride, (void*)offset);
                 attribIdToInd[attribId] = (u8)attribInd;
             }
             assert((availableAttribsMask & (1U << (u32)EAttrib::POSITION)) &&
