@@ -32,4 +32,7 @@ static constexpr u64 nextPowerOf2(u64 x) noexcept
     return x;
 }
 
+template <typename T>
+static constexpr T pow2(T a) { return a * a; }
+
 }

@@ -2,6 +2,7 @@
 
 #include <math.h>
 #include <stdio.h>
+#include <limits.h>
 
 namespace tl
 {
@@ -57,11 +58,67 @@ void toStringBufferT(FmtBuffer& buffer, const Fmt_int& fmtInt)
         return;
     }
     const u32 len = calcToStringLengthT(fmtInt);
+    if(buffer != nullptr)
     for(int i = len-1; x; x /= base, i--) {
         const u64 s = x % base;
         buffer[i] = symbols[s];
     }
     buffer.advance(len);
+}
+
+void toStringBufferT(FmtBuffer& buffer, const Fmt_float& fmt)
+{
+    const char separator = fmt._formatter._comma ? ',' : '.';
+    if(isnan(fmt._value)) {
+        buffer.writeAndAdvance("NaN");
+    }
+    else {
+        double val = fmt._value;
+        if(fmt._value < 0) {
+            buffer.writeAndAdvance('-');
+            val = -val;
+        }
+
+        if(isinf(fmt._value)) {
+            buffer.writeAndAdvance("inf");
+        }
+        else if(fmt._formatter._scientific || val > (double)ULONG_MAX)
+        {
+            const char e = fmt._formatter._capital ? 'E' : 'e';
+            assert(false && "not implemented");
+        }
+        else
+        {
+            double intPartF;
+            const double fractPartF = modf(val, &intPartF);
+            const u64 a = (u64)intPartF;
+            u64 b = (u64)(fractPartF * fmt._formatter._maxDecimalPlaces);
+            static thread_local char fractStr[64];
+            int i = 63;
+            int lastBefore0 = 64;
+            while(i >= 0 && b > 0) {
+                const int x = b % 10;
+                fractStr[i] = '0' + (char)x;
+                if(x != 0 && lastBefore0 == 64) {
+                    lastBefore0 = i;
+                }
+                b /= 10;
+                i--;
+            }
+            i++;
+            int decimalPlaces;
+            for(decimalPlaces = 0; i + decimalPlaces < 64; decimalPlaces++) {
+                if(decimalPlaces >= fmt._formatter._minDecimalPlaces &&
+                   i + decimalPlaces > lastBefore0) break;
+            }
+            toStringBufferT(buffer, a);
+            if(decimalPlaces) {
+                buffer.writeAndAdvance(separator);
+                for(int j = 0; j < decimalPlaces; j++)
+                    buffer.writeAndAdvance(fractStr[i+j]);
+            }
+        }
+    }
 }
 
 u32 calcToStringLengthT(i8 x) { return calcToStringLengthT(fmt::base(10)(x)); }
@@ -72,6 +129,8 @@ u32 calcToStringLengthT(u8 x) { return calcToStringLengthT(fmt::base(10)(x)); }
 u32 calcToStringLengthT(u16 x) { return calcToStringLengthT(fmt::base(10)(x)); }
 u32 calcToStringLengthT(u32 x) { return calcToStringLengthT(fmt::base(10)(x)); }
 u32 calcToStringLengthT(u64 x) { return calcToStringLengthT(fmt::base(10)(x)); }
+u32 calcToStringLengthT(float x) { return calcToStringLengthT(fmt::decimal()(x)); }
+u32 calcToStringLengthT(double x) { return calcToStringLengthT(fmt::decimal()(x)); }
 void toStringBufferT(FmtBuffer& buffer, i8 x) { toStringBufferT(buffer, fmt::base(10)(x)); }
 void toStringBufferT(FmtBuffer& buffer, i16 x) { toStringBufferT(buffer, fmt::base(10)(x)); }
 void toStringBufferT(FmtBuffer& buffer, i32 x) { toStringBufferT(buffer, fmt::base(10)(x)); }
@@ -80,6 +139,8 @@ void toStringBufferT(FmtBuffer& buffer, u8 x) { toStringBufferT(buffer, fmt::bas
 void toStringBufferT(FmtBuffer& buffer, u16 x) { toStringBufferT(buffer, fmt::base(10)(x)); }
 void toStringBufferT(FmtBuffer& buffer, u32 x) { toStringBufferT(buffer, fmt::base(10)(x)); }
 void toStringBufferT(FmtBuffer& buffer, u64 x) { toStringBufferT(buffer, fmt::base(10)(x)); }
+void toStringBufferT(FmtBuffer& buffer, float x) { toStringBufferT(buffer, fmt::decimal()(x)); }
+void toStringBufferT(FmtBuffer& buffer, double x) { toStringBufferT(buffer, fmt::decimal()(x)); }
 
 #define SPECIALIZE_SIGNED_FORMATTER(Int)                        \
     Fmt_int Formatter_int::operator()(Int x)const               \
@@ -117,31 +178,69 @@ SPECILIZE_UNSINGED_FORMATTER(u16)
 SPECILIZE_UNSINGED_FORMATTER(u32)
 SPECILIZE_UNSINGED_FORMATTER(u64)
 
+Fmt_float Formatter_float::operator()(float x)const
+{
+    Fmt_float fmt;
+    fmt._formatter = *this;
+    fmt._value = x;
+    return fmt;
+}
+Fmt_float Formatter_float::operator()(double x)const
+{
+    Fmt_float fmt;
+    fmt._formatter = *this;
+    fmt._value = x;
+    return fmt;
+}
+
 namespace fmt
 {
-    Formatter_int base(int base, bool capital)
-    {
-        assert(base >= 2 && base <= 36);
-        Formatter_int fmt;
-        fmt._base = base;
-        fmt._capital = capital;
-        return fmt;
-    }
+Formatter_int base(int base, bool capital)
+{
+    assert(base >= 2 && base <= 36);
+    Formatter_int fmt;
+    fmt._base = base;
+    fmt._capital = capital;
+    return fmt;
+}
 
-    Formatter_int hex(bool capital)
-    {
-        return base(16, capital);
-    }
+Formatter_int hex(bool capital)
+{
+    return base(16, capital);
+}
 
-    Formatter_int octal()
-    {
-        return base(8, false);
-    }
+Formatter_int octal()
+{
+    return base(8, false);
+}
 
-    Formatter_int binary()
-    {
-        return base(2, false);
-    }
+Formatter_int binary()
+{
+    return base(2, false);
+}
+
+Formatter_float decimal(u8 minDecimalPlaces, u8 maxDecimalPlaces, bool useComma)
+{
+    Formatter_float fmt;
+    fmt._minDecimalPlaces = minDecimalPlaces;
+    fmt._maxDecimalPlaces = maxDecimalPlaces;
+    fmt._scientific = false;
+    fmt._comma = useComma;
+    return fmt;
+}
+
+Formatter_float decimal(u8 maxDecimalPlaces, bool useComma)
+{
+    return decimal(0, maxDecimalPlaces, useComma);
+}
+
+Formatter_float scientific(bool capitalE)
+{
+    Formatter_float fmt;
+    fmt._scientific = true;
+    fmt._capital = capitalE;
+    return fmt;
+}
 }
 
 // --- print ----------------------------------------------------------------------------

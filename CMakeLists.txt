@@ -26,6 +26,7 @@ add_subdirectory(libs/stb)
 add_subdirectory(libs/glm)
 add_subdirectory(libs/cgltf)
 add_subdirectory(libs/tl)
+add_subdirectory(libs/tg)
 
 set(SOURCES
     main.cpp
@@ -38,7 +39,6 @@ PREPEND(SOURCES "src/" ${SOURCES})
 add_executable(gltf_viewer
     ${SOURCES}
 )
-
 target_link_libraries(gltf_viewer glad)
 target_link_libraries(gltf_viewer glfw)
 target_link_libraries(gltf_viewer imgui)
@@ -46,3 +46,13 @@ target_link_libraries(gltf_viewer stb)
 target_link_libraries(gltf_viewer glm)
 target_link_libraries(gltf_viewer cgltf)
 target_link_libraries(gltf_viewer tl)
+
+add_library(textool
+	textool/textool.cpp
+)
+target_link_libraries(textool glfw)
+target_link_libraries(textool stb)
+target_link_libraries(textool glm)
+target_link_libraries(textool tl)
+target_link_libraries(textool tg)
+

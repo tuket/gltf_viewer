@@ -14,15 +14,19 @@ class FmtBuffer
     char* end;
     i32 size;
 public:
-    FmtBuffer(char* start, i32 size = -1)
+    FmtBuffer(char* start, i32 size = -1) // -1 means the size is unknows
         : start(start), end(start), size(size)
     {}
     u32 count()const {
         return end - start;
     }
 
+    bool operator==(decltype(nullptr)) { return start == nullptr; }
+    bool operator!=(decltype(nullptr)) { return start != nullptr; }
+
     char& operator[](i32 i) {
         assert(size < 0 || i < size);
+        assert(start != nullptr);
         return end[i];
     }
 
@@ -78,40 +82,6 @@ static u32 calcToStringLengthT(const char (&str)[N]) { return calcToStringLength
 template <u32 N>
 static void toStringBufferT(FmtBuffer& buffer, const char (&str)[N]) { toStringBufferT(buffer, CStr(str)); }
 
-/*
-static u32 calcToStringLength(const char* str) { return calcToStringLength(CStr(str)); }
-static void toStringBuffer(char* buffer, const char* str) { toStringBuffer(buffer, CStr(str)); }
-
-static u32 calcToStringLength(char* str) { return calcToStringLength(CStr(str)); }
-static void toStringBuffer(char* buffer, char* str) { toStringBuffer(buffer, CStr(str)); }*/
-
-// --- double -------------------------------------------------------------
-
-/*
-struct Fmt_double;
-
-class Formatter_double
-{
-public:
-    Formatter_double();
-    Fmt_double operator()(double x)const;
-private:
-    int _maxDecimalPlaces;
-    int _fixedDecimalPlaces;
-};
-
-struct Fmt_double
-{
-    double value;
-    Formatter_double formatter;
-};
-
-namespace fmt
-{
-Fmt_double maxDecimalPlaces(double x, );
-}
-*/
-
 // --- int ----------------------------------------------------------------------------
 
 class Fmt_int;
@@ -140,16 +110,42 @@ public:
     int _negative; // 0: positive, 1: negative
 };
 
+class Fmt_float;
+
+class Formatter_float
+{
+public:
+    Fmt_float operator()(float x)const;
+    Fmt_float operator()(double x)const;
+
+    u8 _minDecimalPlaces;
+    u8 _maxDecimalPlaces;
+    bool _scientific : 1; // use scientific notation
+    bool _capital : 1; // use capital E in scientific notation
+    bool _comma : 1; // use a comma to separate the the integer part from the decimal part, otherwise use a dot (default)
+};
+
+class Fmt_float
+{
+public:
+    Formatter_float _formatter;
+    double _value;
+};
+
 namespace fmt
 {
     Formatter_int base(int base, bool capital = true);
     Formatter_int hex(bool capital = true);
     Formatter_int octal();
     Formatter_int binary();
+    Formatter_float decimal(u8 minDecimalPlaces, u8 maxDecimalPlaces, bool useComma = false);
+    Formatter_float decimal(u8 maxDecimalPlaces = 6, bool useComma = false);
+    Formatter_float scientific(bool capitalE = false);
 }
 
 u32 calcToStringLengthT(const Fmt_int& fmt);
 void toStringBufferT(FmtBuffer& buffer, const Fmt_int& fmt);
+void toStringBufferT(FmtBuffer& buffer, const Fmt_float& fmt);
 
 u32 calcToStringLengthT(i8 x);
 u32 calcToStringLengthT(i16 x);
@@ -159,6 +155,8 @@ u32 calcToStringLengthT(u8 x);
 u32 calcToStringLengthT(u16 x);
 u32 calcToStringLengthT(u32 x);
 u32 calcToStringLengthT(u64 x);
+u32 calcToStringLengthT(float x);
+u32 calcToStringLengthT(double x);
 void toStringBufferT(FmtBuffer& buffer, i8 x);
 void toStringBufferT(FmtBuffer& buffer, i16 x);
 void toStringBufferT(FmtBuffer& buffer, i32 x);
@@ -167,6 +165,8 @@ void toStringBufferT(FmtBuffer& buffer, u8 x);
 void toStringBufferT(FmtBuffer& buffer, u16 x);
 void toStringBufferT(FmtBuffer& buffer, u32 x);
 void toStringBufferT(FmtBuffer& buffer, u64 x);
+void toStringBufferT(FmtBuffer& buffer, float x);
+void toStringBufferT(FmtBuffer& buffer, double x);
 
 // --- toString -------------------------------------------------------------------------
 

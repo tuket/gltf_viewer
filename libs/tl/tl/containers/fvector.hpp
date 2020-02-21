@@ -28,9 +28,15 @@ public:
     constexpr size_t capacity()const { return N; }
 
     void resize(size_t n);
+    void clear() { resize(0); }
     void push_back(const T& x);
     void push_back(T&& x);
     void pop_back();
+
+    const T& front()const { return (*this)[0]; }
+    T& front() { return (*this)[0]; }
+    const T& back()const { return (*this)[_size-1]; }
+    T& back() { return (*this)[_size-1]; }
 
 private:
     template<typename... Args>

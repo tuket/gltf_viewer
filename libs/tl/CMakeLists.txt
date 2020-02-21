@@ -31,6 +31,7 @@ set(HEADERS
 	hash/str.hpp
 	algorithms/copy.hpp
 	algorithms/fill.hpp
+	rect.hpp
 )
 PREPEND(HEADERS "${INC}/tl" ${HEADERS})
 
