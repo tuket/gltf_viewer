@@ -11,7 +11,7 @@ bool segmentIntersect(vec2& out, vec2 a0, vec2 a1, vec2 b0, vec2 b1)
 {
     const float alphaDenominator =
         (a0.x - a1.x) * (b1.y - b0.y) -
-        (a0.y - a1.y) * (b1.x * b0.x);
+        (a0.y - a1.y) * (b1.x - b0.x);
     if(alphaDenominator * alphaDenominator < 0.01f)
         return false;
 
@@ -29,13 +29,13 @@ bool segmentIntersect(vec2& out, vec2 a0, vec2 a1, vec2 b0, vec2 b1)
         return false;
 
     const float betaNumerator =
-        (b1.x - a1.x) * (a0.y * a1.y) -
+        (b1.x - a1.x) * (a0.y - a1.y) -
         (b1.y - a1.y) * (a0.x - a1.x);
     const float beta = betaNumerator / betaDenominator;
     if(beta < 0 || beta > 1)
         return false;
 
-    out = mix(a0, a1, alpha);
+    out = mix(a1, a0, alpha);
     return true;
 }
 

@@ -41,6 +41,9 @@ bool test_segmentIntersect()
         }, {
             Input{{2, 2}, {4, 2}, {3, 0}, {3, 3}},
             Output{true, {3, 2}}
+        }, {
+            Input{{3, 5}, {-3, -1}, {0, 5}, {3, 2}},
+            Output{true, {1.5f, 3.5f}}
         }
     };
     bool allOkay = true;
