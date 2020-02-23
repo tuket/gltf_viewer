@@ -1,6 +1,8 @@
 project(tg)
 
 add_library(tg
+	color.hpp
+	img.hpp
 	geometry_utils.hpp geometry_utils.cpp
     texture_utils.hpp texture_utils.cpp
 )

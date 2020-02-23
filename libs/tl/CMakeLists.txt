@@ -27,6 +27,7 @@ set(HEADERS
 	containers/fvector.hpp
 	containers/hash_map.hpp
 	containers/tuple.hpp
+	containers/table.hpp
 	hash/hash.hpp
 	hash/str.hpp
 	algorithms/copy.hpp
