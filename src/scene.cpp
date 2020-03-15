@@ -18,8 +18,8 @@
 #include "shaders.hpp"
 
 using tl::FVector;
-using tl::Array;
-using tl::CArray;
+using tl::Span;
+using tl::CSpan;
 
 extern GLFWwindow* window;
 
@@ -277,7 +277,7 @@ static void imguiPrimitive(const cgltf_primitive& prim)
     }
 
     if(ImGui::TreeNode("Attributes")) {
-        CArray<cgltf_attribute> attributes(prim.attributes, prim.attributes_count);
+        CSpan<cgltf_attribute> attributes(prim.attributes, prim.attributes_count);
         for(size_t i = 0; i < attributes.size(); i++)
         {
             auto& attrib = attributes[i];
@@ -293,7 +293,7 @@ static void imguiPrimitive(const cgltf_primitive& prim)
     // THE FOLLOWNG CODE (Morph targets) HAS NOT BEEN TESTED
     if(prim.targets)
     if(ImGui::TreeNode("Morph targets")) {
-        CArray<cgltf_morph_target> targets(prim.targets, prim.targets_count);
+        CSpan<cgltf_morph_target> targets(prim.targets, prim.targets_count);
         for(size_t i = 0; i < targets.size(); i++)
         {
             auto& target = targets[i];
@@ -302,7 +302,7 @@ static void imguiPrimitive(const cgltf_primitive& prim)
             }
             else if(ImGui::TreeNode((void*)&target, "Attributes"))
             {
-                CArray<cgltf_attribute> attribs(target.attributes, target.attributes_count);
+                CSpan<cgltf_attribute> attribs(target.attributes, target.attributes_count);
                 for(size_t i = 0; i < attribs.size(); i++)
                 {
                     auto& attrib = attribs[i];
@@ -353,7 +353,7 @@ static void drawSceneNodeRecursive(const cgltf_node& node, const glm::mat4& pare
         const glm::mat4 modelViewMat = orbitCam.viewMtx() * modelMat;
         const glm::mat3 modelMat3 = modelMat;
         const glm::mat4 modelViewProj = camProjMtx * modelViewMat;
-        CArray<cgltf_primitive> primitives(node.mesh->primitives, node.mesh->primitives_count);
+        CSpan<cgltf_primitive> primitives(node.mesh->primitives, node.mesh->primitives_count);
         const u32* vaos = gpu::vaos.begin() + gpu::meshPrimsVaos[getMeshInd(node.mesh)];
         for(size_t i = 0; i < primitives.size(); i++)
         {
@@ -423,7 +423,7 @@ static void drawSceneNodeRecursive(const cgltf_node& node, const glm::mat4& pare
         }
     }
 
-    CArray<cgltf_node*> children(node.children, node.children_count);
+    CSpan<cgltf_node*> children(node.children, node.children_count);
     for(cgltf_node* child : children) {
         assert(child);
         drawSceneNodeRecursive(*child, modelMat);
@@ -440,7 +440,7 @@ void drawScene()
     int w, h;
     glfwGetWindowSize(window, &w, &h);
     camProjMtx = glm::perspective(camProjInfo.fovY, (float)w / h, camProjInfo.nearDist, camProjInfo.farDist);
-    CArray<cgltf_node> nodes(parsedData->nodes, parsedData->nodes_count);
+    CSpan<cgltf_node> nodes(parsedData->nodes, parsedData->nodes_count);
     for(const cgltf_node& node : nodes)
         if(node.parent == nullptr)
             drawSceneNodeRecursive(node);
@@ -583,7 +583,7 @@ static void drawGui_texturesTab()
             ImGui::EndPopup();
         }*/
     };
-    tl::CArray<cgltf_texture> textures(parsedData->textures, parsedData->textures_count);
+    tl::CSpan<cgltf_texture> textures(parsedData->textures, parsedData->textures_count);
     tl::toStringBuffer(scratchStr(), "Textures (", textures.size(), ")");
     if(ImGui::CollapsingHeader(scratchStr()))
     for(size_t i = 0; i < textures.size(); i++)
@@ -611,7 +611,7 @@ static void drawGui_texturesTab()
         }
     }
 
-    tl::CArray<cgltf_image> images(parsedData->images, parsedData->images_count);
+    tl::CSpan<cgltf_image> images(parsedData->images, parsedData->images_count);
     tl::toStringBuffer(scratchStr(), "Images (", images.size(), ")");
     if(ImGui::CollapsingHeader(scratchStr()))
     for(size_t i = 0; i < images.size(); i++)
@@ -621,7 +621,7 @@ static void drawGui_texturesTab()
         ImGui::TreePop();
     }
 
-    tl::CArray<cgltf_sampler> samplers(parsedData->samplers, parsedData->samplers_count);
+    tl::CSpan<cgltf_sampler> samplers(parsedData->samplers, parsedData->samplers_count);
     tl::toStringBuffer(scratchStr(), "Samplers (", samplers.size(), ")");
     if(ImGui::CollapsingHeader(scratchStr()))
     for(size_t i = 0; i < samplers.size(); i++)
@@ -634,7 +634,7 @@ static void drawGui_texturesTab()
 
 static void drawGui_buffersTab()
 {
-    CArray<cgltf_buffer> buffers (parsedData->buffers, parsedData->buffers_count);
+    CSpan<cgltf_buffer> buffers (parsedData->buffers, parsedData->buffers_count);
     for(size_t i = 0; i < buffers.size(); i++)
     {
         const cgltf_buffer& buffer = buffers[i];
@@ -655,7 +655,7 @@ static void drawGui_buffersTab()
 
 static void drawGui_bufferViewsTab()
 {
-    CArray<cgltf_buffer_view> views (parsedData->buffer_views, parsedData->buffer_views_count);
+    CSpan<cgltf_buffer_view> views (parsedData->buffer_views, parsedData->buffer_views_count);
     for(size_t i = 0; i < views.size(); i++)
     {
         const cgltf_buffer_view& view = views[i];
@@ -676,7 +676,7 @@ static void drawGui_bufferViewsTab()
 
 static void drawGui_accessorsTab()
 {
-    CArray<cgltf_accessor> accessors (parsedData->accessors, parsedData->accessors_count);
+    CSpan<cgltf_accessor> accessors (parsedData->accessors, parsedData->accessors_count);
     for(size_t i = 0; i < accessors.size(); i++)
     {
         const cgltf_accessor& accessor = accessors[i];
@@ -692,7 +692,7 @@ static void drawGui_accessorsTab()
 
 static void drawGui_materialsTab()
 {
-    CArray<cgltf_material> materials(parsedData->materials, parsedData->materials_count);
+    CSpan<cgltf_material> materials(parsedData->materials, parsedData->materials_count);
     for(size_t i = 0; i < materials.size(); i++)
     {
         const cgltf_material& material = materials[i];
@@ -708,13 +708,13 @@ static void drawGui_materialsTab()
 
 static void drawGui_skins()
 {
-    CArray<cgltf_skin> skins(parsedData->skins, parsedData->skins_count);
+    CSpan<cgltf_skin> skins(parsedData->skins, parsedData->skins_count);
     for(size_t i = 0; i < skins.size(); i++)
     {
         auto& skin = skins[i];
         if(ImGui::TreeNode(&skin, "%ld) %s", i, skin.name ? skin.name : ""))
         {
-            CArray<cgltf_node*> joints(skin.joints, skin.joints_count);
+            CSpan<cgltf_node*> joints(skin.joints, skin.joints_count);
             if(ImGui::TreeNode((void*)skin.joints, "joints(%ld)", joints.size()))
             {
                 for(size_t j = 0; j < joints.size(); j++)
@@ -735,7 +735,7 @@ static void drawGui_skins()
 
 static void drawGui_samplers()
 {
-    CArray<cgltf_sampler> samplers (parsedData->samplers, parsedData->samplers_count);
+    CSpan<cgltf_sampler> samplers (parsedData->samplers, parsedData->samplers_count);
     for(size_t i = 0; i < samplers.size(); i++)
     {
         tl::toStringBuffer(scratchStr(), i);
@@ -754,7 +754,7 @@ static void drawGui_samplers()
 
 static void drawGui_cameras()
 {
-    CArray<cgltf_camera> cameras(parsedData->cameras, parsedData->cameras_count);
+    CSpan<cgltf_camera> cameras(parsedData->cameras, parsedData->cameras_count);
 
     if(ImGui::BeginCombo("Use camera", getCameraName(selectedCamera)))
     {
@@ -797,7 +797,7 @@ static void drawGui_cameras()
 
 static void drawGui_lights()
 {
-    CArray<cgltf_light> lights(parsedData->lights, parsedData->lights_count);
+    CSpan<cgltf_light> lights(parsedData->lights, parsedData->lights_count);
     for(size_t i = 0; i < lights.size(); i++)
     {
         const cgltf_light& light = lights[i];
@@ -871,7 +871,7 @@ void drawGui()
 
 static void loadTextures()
 {
-    CArray<cgltf_texture> textures(parsedData->textures, parsedData->textures_count);
+    CSpan<cgltf_texture> textures(parsedData->textures, parsedData->textures_count);
     gpu::textures.resize(textures.size());
     glGenTextures(textures.size(), gpu::textures.begin());
     for(size_t i = 0; i < textures.size(); i++)
@@ -900,7 +900,7 @@ static void loadTextures()
 
 static void loadBufferObjects()
 {
-    CArray<cgltf_buffer> buffers (parsedData->buffers, parsedData->buffers_count);
+    CSpan<cgltf_buffer> buffers (parsedData->buffers, parsedData->buffers_count);
     gpu::bos.resize(buffers.size());
     glGenBuffers(gpu::bos.size(), gpu::bos.begin());
     for(size_t i = 0; i < buffers.size(); i++)
@@ -913,14 +913,14 @@ static void loadBufferObjects()
 
 static void createVaos()
 {
-    CArray<cgltf_mesh> meshes (parsedData->meshes, parsedData->meshes_count);
+    CSpan<cgltf_mesh> meshes (parsedData->meshes, parsedData->meshes_count);
     gpu::meshPrimsVaos.resize(meshes.size()+1);
     gpu::meshPrimsVaos[0] = 0;
     u32 rangeInd = 0;
     for(size_t meshInd = 0; meshInd < meshes.size(); meshInd++)
     {
         auto& mesh = meshes[meshInd];
-        CArray<cgltf_primitive> prims(mesh.primitives, mesh.primitives_count);
+        CSpan<cgltf_primitive> prims(mesh.primitives, mesh.primitives_count);
         rangeInd += prims.size();
         gpu::meshPrimsVaos[meshInd+1] = rangeInd;
     }
@@ -931,7 +931,7 @@ static void createVaos()
     {
         auto& mesh = meshes[meshInd];
         const u32 vaoBeginInd = gpu::meshPrimsVaos[meshInd];
-        CArray<cgltf_primitive> prims(mesh.primitives, mesh.primitives_count);
+        CSpan<cgltf_primitive> prims(mesh.primitives, mesh.primitives_count);
         for(size_t primInd = 0; primInd < prims.size(); primInd++)
         {
             auto& prim = prims[primInd];
@@ -941,7 +941,7 @@ static void createVaos()
                 const u32 ebo = gpu::bos[getBufferInd(prim.indices->buffer_view->buffer)];
                 glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
             }
-            CArray<cgltf_attribute> attribs(prim.attributes, prim.attributes_count);
+            CSpan<cgltf_attribute> attribs(prim.attributes, prim.attributes_count);
             u32 availableAttribsMask = 0;
             u8 attribIdToInd[(int)EAttrib::COUNT];
             for(size_t attribInd = 0; attribInd < attribs.size(); attribInd++)
@@ -1032,7 +1032,7 @@ static void createVaos()
 
 static void loadMaterials()
 {
-    CArray<cgltf_material> materials (parsedData->materials, parsedData->materials_count);
+    CSpan<cgltf_material> materials (parsedData->materials, parsedData->materials_count);
     for(size_t i = 0; i < materials.size(); i++)
     {
         imgui_state::materialTexturesHeights[i] = {128.f, 128.f};

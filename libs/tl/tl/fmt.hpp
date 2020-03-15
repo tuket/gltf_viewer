@@ -3,7 +3,7 @@
 #include "str.hpp"
 #include <stdio.h>
 #include <string.h>
-#include <tl/carray.hpp>
+#include <tl/span.hpp>
 
 namespace tl
 {
@@ -196,7 +196,7 @@ static void toFmtBuffer(FmtBuffer& buffer, const T& x, const Ts&... xs)
 }
 
 template <typename T, typename... Ts>
-static void toStringBuffer(tl::Array<char> buffer, const T& x, const Ts&... xs)
+static void toStringBuffer(tl::Span<char> buffer, const T& x, const Ts&... xs)
 {
     FmtBuffer buf(buffer.begin(), buffer.size());
     fmtBufferAppend(buf, x, xs...);

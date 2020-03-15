@@ -5,7 +5,7 @@
 #include <glm/mat4x4.hpp>
 #include <glm/gtc/constants.hpp>
 #include <glad/glad.h>
-#include <tl/carray.hpp>
+#include <tl/span.hpp>
 
 constexpr float PI = glm::pi<float>();
 
@@ -18,8 +18,8 @@ public:
     template <typename T>
     T* ptr() {return reinterpret_cast<T*>(_data); }
     template <typename T>
-    tl::Array<T> asArray() {
-        return tl::Array<T>(reinterpret_cast<T*>(_data), _size / sizeof(T));
+    tl::Span<T> asArray() {
+        return tl::Span<T>(reinterpret_cast<T*>(_data), _size / sizeof(T));
     }
     char* str() { return ptr<char>(); }
 private:
@@ -28,8 +28,8 @@ private:
     u8* _data;
 };
 extern ScratchBuffer scratch;
-static inline tl::Array<char> scratchStr() { return scratch.asArray<char>(); }
-static inline tl::Array<u8> scratchU8() { return scratch.asArray<u8>(); }
+static inline tl::Span<char> scratchStr() { return scratch.asArray<char>(); }
+static inline tl::Span<u8> scratchU8() { return scratch.asArray<u8>(); }
 
 enum class EAttrib : u8 {
     POSITION = 0,

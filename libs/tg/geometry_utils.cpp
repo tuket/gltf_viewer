@@ -40,7 +40,7 @@ bool segmentIntersect(vec2& out, vec2 a0, vec2 a1, vec2 b0, vec2 b1)
 }
 
 // points in a quad must be in CCW order
-bool isPointInsideQuad(glm::vec2 p, tl::CArray<glm::vec2>& q)
+bool isPointInsideQuad(glm::vec2 p, tl::CSpan<glm::vec2> q)
 {
     auto turn90DegCW = [](vec2 p) -> vec2{
         return {p.y, -p.x};
@@ -66,7 +66,7 @@ float triangleArea(vec2 a, vec2 b, vec2 c)
     return abs(0.5f * dot(v1p, v2));
 }
 
-float intersectionArea_square_quad(const tl::rect& s, tl::CArray<glm::vec2>& q)
+float intersectionArea_square_quad(const tl::rect& s, tl::CSpan<glm::vec2> q)
 {
     assert(q.size() == 4);
     const vec2 sp[4] = { // square points;

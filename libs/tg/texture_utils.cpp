@@ -25,7 +25,7 @@ FilterCubemapError filterCubemap(const char* inTexFileName, const char* outTexFi
     return FilterCubemapError::NONE;
 }
 
-vec3 sampleImgQuad(CImg3f img, tl::CArray<vec2>& q)
+vec3 sampleImgQuad(CImg3f img, tl::CSpan<vec2> q)
 {
     float x0f = q[0].x;
     for(size_t i = 0; i < q.size(); i++)
@@ -60,34 +60,67 @@ vec3 sampleImgQuad(CImg3f img, tl::CArray<vec2>& q)
 
 void cylinderMapToCubeMap(CubeImgView3f cube, CImg3f cylindricMap)
 {
-    auto doFace = [m = cylindricMap](int faceInd, vec2 )
+    // rays for each corner of the pixel
+    auto calcFacePixelRays = [](vec3 (&rays)[4], ECubeImgFace eFace, float s05, int x, int y)
     {
-
+        switch (eFace)
+        {
+        case ECubeImgFace::LEFT:
+            rays[0] = {-1, (y-s05)/s05,   (s05-x)/s05};
+            rays[1] = {-1, (y-s05)/s05,   (s05-x-1)/s05};
+            rays[2] = {-1, (y-s05+1)/s05, (s05-x-1)/s05};
+            rays[3] = {-1, (y-s05+1)/s05, (s05-x)/s05};
+            break;
+        case ECubeImgFace::RIGHT:
+            rays[0] = {1, (y-s05)/s05,   (x-s05)/s05};
+            rays[1] = {1, (y-s05)/s05,   (x-s05+1)/s05};
+            rays[2] = {1, (y-s05+1)/s05, (x-s05+1)/s05};
+            rays[3] = {1, (y-s05+1)/s05, (x-s05)/s05};
+            break;
+        case ECubeImgFace::DOWN:
+            rays[0] = {(x-s05)/s05,   -1, (s05-y)/s05};
+            rays[1] = {(x-s05+1)/s05, -1, (s05-y)/s05};
+            rays[2] = {(x-s05+1)/s05, -1, (s05-y-1)/s05};
+            rays[3] = {(x-s05)/s05,   -1, (s05-y-1)/s05};
+            break;
+        case ECubeImgFace::UP:
+            rays[0] = {(x-s05)/s05,   1, (y-s05)/s05};
+            rays[1] = {(x-s05+1)/s05, 1, (y-s05)/s05};
+            rays[2] = {(x-s05+1)/s05, 1, (y-s05+1)/s05};
+            rays[3] = {(x-s05)/s05,   1, (y-s05+1)/s05};
+            break;
+        case ECubeImgFace::FRONT:
+            rays[0] = {(x-s05)/s05,   (y-s05)/s05,   1};
+            rays[1] = {(x+1-s05)/s05, (y-s05)/s05,   1};
+            rays[2] = {(x+1-s05)/s05, (y+1-s05)/s05, 1};
+            rays[3] = {(x-s05)/s05,   (y+1-s05)/s05, 1};
+            break;
+        case ECubeImgFace::BACK:
+            rays[0] = {(x-s05)/s05,   (y-s05)/s05,   -1};
+            rays[1] = {(x+1-s05)/s05, (y-s05)/s05,   -1};
+            rays[2] = {(x+1-s05)/s05, (y+1-s05)/s05, -1};
+            rays[3] = {(x-s05)/s05,   (y+1-s05)/s05, -1};
+            break;
+        }
     };
     // front
     auto& face = cube.front;
-    const int w = face.width();
-    const int h = face.height();
-    const float w05 = 0.5f * w;
-    const float h05 = 0.5f * h;
-    for(int y = 0; y < h; y++)
-    for(int x = 0; x < w; x++)
+    const float s05 = 0.5f * cube.sidePixels;
+    for(int y = 0; y < cube.sidePixels; y++)
+    for(int x = 0; x < cube.sidePixels; x++)
     {
-        vec3 rays[4] = { // rays for each corner of the pixel
-            {(x-w05)/w05, (y-h05)/h05, 1},
-            {(x+1-w05)/w05, (y-h05)/h05, 1},
-            {(x+1-w05)/w05, (y+1-h05)/h05, 1},
-            {(x-w05)/w05, (y+1-h05)/h05, 1},
-        };
-        vec2 texCoords[4] = {
+        vec3 rays[4]; // rays for each corner of the pixel
+        calcFacePixelRays(rays, ECubeImgFace::FRONT, s05, x, y);
 
-        };
+        vec2 texCoords[4];
         for(int i = 0; i < 4; i++) {
             vec3& r = rays[i];
             r = glm::normalize(r); // project onto unit sphere
             texCoords[i] = { r.y, glm::normalize(vec2{r.x, r.z}).x }; // project onto cylinder
-            texCoords[i] = 0.5f * (texCoords[i] + vec2(1)) * vec2(w, h);
+            texCoords[i] = 0.5f * (texCoords[i] + vec2(1)) * vec2(cylindricMap.width(), cylindricMap.height());
         }
+        tl::Span<vec2> a = texCoords;
+        sampleImgQuad(cylindricMap, a);
     }
 }
 

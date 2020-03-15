@@ -1,5 +1,6 @@
 #pragma once
 
+#include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
 #include <glm/vec4.hpp>
 #include "color.hpp"
@@ -41,14 +42,19 @@ public:
     ~Img() { delete[] ImgView<T>::_data; }
 };
 
-template <typename T>
-struct CubeImg {
-    Img<T> left, right, down, up, front, back;
-};
+enum class ECubeImgFace { LEFT, RIGHT, DOWN, UP, FRONT, BACK};
 
 template <typename T>
-struct CubeImgView {
-    ImgView<T> left, right, down, up, front, back;
+struct CubeImgView
+{
+    struct Face { T* data; int stride; };
+    int sidePixels;
+    Face left, right, down, up, front, back;
+
+    // create from an image view, specifiying the botton-left coordinate of each face in pixels (order of faces specified in ECubeImgFace)
+    static CubeImgView<T> createFromSingleImg(ImgView<T> imgView, int sidePixels, const glm::ivec2 (&faceCoords)[6]);
+    ImgView<T> operator[](ECubeImgFace eFace);
+    ImgView<const T> operator[](ECubeImgFace eFace)const;
 };
 
 template <typename T>
@@ -101,6 +107,34 @@ template <typename T>
 ImgView<const T> ImgView<T>::subImb(int x, int y, int w, int h)const {
     ImgView<const T> sub(w, h, _stride, _data + x + y*_stride);
     return sub;
+}
+
+template <typename T>
+CubeImgView<T> CubeImgView<T>::createFromSingleImg(ImgView<T> imgView, int faceSide, const glm::ivec2 (&faceCoords)[6])
+{
+    CubeImgView<T> view;
+    view.sidePixels = faceSide;
+    Face* faces = &view.left;
+    for(int i = 0; i < 6; i++) {
+        faces[i].stride = imgView.stride();
+        faces[i].data = &imgView(faceCoords[i].x, faceCoords[i].y);
+    }
+    return view;
+}
+
+template <typename T>
+ImgView<T> CubeImgView<T>::operator[](ECubeImgFace eFace) {
+    const int i = (int)eFace;
+    assert(i >= 0 && i < 6);
+    Face& face = (&left)[i];
+    return ImgView<T>(sidePixels, sidePixels, face.stride, face.data);
+}
+template <typename T>
+ImgView<const T> CubeImgView<T>::operator[](ECubeImgFace eFace)const {
+    const int i = (int)eFace;
+    assert(i >= 0 && i < 6);
+    const Face& face = (&left)[i];
+    return ImgView<T>(sidePixels, sidePixels, face.stride, face.data);
 }
 
 }

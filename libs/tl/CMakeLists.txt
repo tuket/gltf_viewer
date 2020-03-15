@@ -7,7 +7,7 @@ set(HEADERS
 	fmt.hpp
 	uptr.hpp
 	pair.hpp
-	carray.hpp
+	span.hpp
 	basic_math.hpp
 	delegate.hpp
 	endian.hpp
