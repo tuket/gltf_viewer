@@ -16,7 +16,6 @@ enum class FilterCubemapError {
 FilterCubemapError filterCubemap(const char* inTexFileName, const char* outTexFileName,
     const int w, const int h, const glm::vec2 (&facesCoords)[6]);
 
-
 void cylinderMapToCubeMap(CubeImgView3f cube, CImg3f cylindricMap);
 
 }

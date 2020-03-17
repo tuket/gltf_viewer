@@ -2,7 +2,7 @@ project(tg)
 
 add_library(tg
 	color.hpp
-	img.hpp
+	img.hpp img.cpp
 	geometry_utils.hpp geometry_utils.cpp
     texture_utils.hpp texture_utils.cpp
 )
@@ -17,6 +17,7 @@ target_link_libraries(tg
 add_executable(tg_tests EXCLUDE_FROM_ALL
 	tests/main.cpp
 	tests/test_geometry.cpp
+	tests/test_cylindermap_to_cubemap.cpp
 )
 target_link_libraries(tg_tests
 	glm

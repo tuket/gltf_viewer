@@ -103,24 +103,26 @@ void cylinderMapToCubeMap(CubeImgView3f cube, CImg3f cylindricMap)
             break;
         }
     };
-    // front
-    auto& face = cube.front;
-    const float s05 = 0.5f * cube.sidePixels;
-    for(int y = 0; y < cube.sidePixels; y++)
-    for(int x = 0; x < cube.sidePixels; x++)
-    {
-        vec3 rays[4]; // rays for each corner of the pixel
-        calcFacePixelRays(rays, ECubeImgFace::FRONT, s05, x, y);
 
-        vec2 texCoords[4];
-        for(int i = 0; i < 4; i++) {
-            vec3& r = rays[i];
-            r = glm::normalize(r); // project onto unit sphere
-            texCoords[i] = { r.y, glm::normalize(vec2{r.x, r.z}).x }; // project onto cylinder
-            texCoords[i] = 0.5f * (texCoords[i] + vec2(1)) * vec2(cylindricMap.width(), cylindricMap.height());
+    const float s05 = 0.5f * cube.sidePixels;
+    for(int faceInd = 0; faceInd < 6; faceInd++)
+    {
+        auto eFace = (ECubeImgFace)faceInd;
+        for(int y = 0; y < cube.sidePixels; y++)
+        for(int x = 0; x < cube.sidePixels; x++)
+        {
+            vec3 rays[4]; // rays for each corner of the pixel
+            calcFacePixelRays(rays, eFace, s05, x, y);
+
+            vec2 texCoords[4];
+            for(int i = 0; i < 4; i++) {
+                vec3& r = rays[i];
+                r = glm::normalize(r); // project onto unit sphere
+                texCoords[i] = { r.y, glm::normalize(vec2{r.x, r.z}).x }; // project onto cylinder
+                texCoords[i] = 0.5f * (texCoords[i] + vec2(1)) * vec2(cylindricMap.width(), cylindricMap.height());
+            }
+            cube[eFace](x, y) = sampleImgQuad(cylindricMap, texCoords);
         }
-        tl::Span<vec2> a = texCoords;
-        sampleImgQuad(cylindricMap, a);
     }
 }
 

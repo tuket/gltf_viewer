@@ -1,5 +1,6 @@
 #pragma once
 
+#include <stdlib.h>
 #include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
 #include <glm/vec4.hpp>
@@ -38,8 +39,10 @@ class Img : public ImgView<T>
 {
 public:
     Img() : ImgView<T>() {}
-    Img(int w, int h) : ImgView<T>(w, h, new T[w*h]) {}
-    ~Img() { delete[] ImgView<T>::_data; }
+    Img(int w, int h) : ImgView<T>(w, h, malloc(sizeof(T)*w*h)) {}
+    ~Img() { free(ImgView<T>::_data); }
+
+    static Img<T> load(const char* fileName);
 };
 
 enum class ECubeImgFace { LEFT, RIGHT, DOWN, UP, FRONT, BACK};
