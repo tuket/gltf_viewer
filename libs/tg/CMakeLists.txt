@@ -11,6 +11,7 @@ target_include_directories(tg PUBLIC  ${PROJECT_SOURCE_DIR}/..)
 
 target_link_libraries(tg
 	glm
+	stb
 	tl
 )
 

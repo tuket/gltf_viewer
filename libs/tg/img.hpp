@@ -16,6 +16,7 @@ public:
     ImgView() : _w(0), _h(0), _stride(0), _data(nullptr) {}
     ImgView(int w, int h, T* data) : _w(h), _h(h), _stride(w), _data(data) {}
     ImgView(int w, int h, int stride, T* data) : _w(w), _h(h), _stride(stride), _data(data) {}
+    operator ImgView<const T>()const { return ImgView<const T>(_w, _h, _data); }
 
     const T& operator()(int x, int y)const;
     T& operator()(int x, int y);
@@ -24,6 +25,8 @@ public:
     int height()const { return _h; }
     int stride()const { return _stride; }
     int strideInBytes()const { return _stride * sizeof(T); }
+    T* data() { return _data; }
+    const T* data()const { return _data; }
 
     ImgView subImg(int x, int y, int w, int h);
     ImgView<const T> subImb(int x, int y, int w, int h)const;
@@ -39,13 +42,13 @@ class Img : public ImgView<T>
 {
 public:
     Img() : ImgView<T>() {}
-    Img(int w, int h) : ImgView<T>(w, h, malloc(sizeof(T)*w*h)) {}
+	Img(int w, int h) : ImgView<T>(w, h, (T*)malloc(sizeof(T)*w*h)) {}
     ~Img() { free(ImgView<T>::_data); }
 
     static Img<T> load(const char* fileName);
 };
 
-enum class ECubeImgFace { LEFT, RIGHT, DOWN, UP, FRONT, BACK};
+enum class ECubeImgFace { LEFT, RIGHT, DOWN, UP, FRONT, BACK };
 
 template <typename T>
 struct CubeImgView

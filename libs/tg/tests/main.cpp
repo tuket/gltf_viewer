@@ -4,6 +4,7 @@
 #include <tl/fmt.hpp>
 
 bool test_segmentIntersect();
+bool test_cylinderMapToCubeMap();
 
 struct TestInfo {
     CStr name;
@@ -11,7 +12,8 @@ struct TestInfo {
 };
 
 static TestInfo tests[] = {
-    {"segmentIntersect", test_segmentIntersect}
+    {"segmentIntersect", test_segmentIntersect},
+    {"cylinderMapToCubeMap", test_cylinderMapToCubeMap}
 };
 
 static char scratchStr[1024];

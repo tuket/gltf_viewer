@@ -119,8 +119,9 @@ float intersectionArea_square_quad(const tl::rect& s, tl::CSpan<glm::vec2> q)
             intersectionPoints.clear();
             for(int j = 0; j < 4; j++) {
                 const int j1 = (j+1) % 4;
-                if(segmentIntersect(intersectionPoints.back(), q1[i], q1[i1], q2[j], q2[j1])) {
-                    intersectionPoints.resize(intersectionPoints.size() + 1);
+                vec2 intersectionPoint;
+                if(segmentIntersect(intersectionPoint, q1[i], q1[i1], q2[j], q2[j1])) {
+                    intersectionPoints.push_back(intersectionPoint);
                 }
             }
             i++;

@@ -30,7 +30,7 @@ struct Color4u8
 
 // --- impl -------------------------------------------------------------------------------------------------------
 
-u8& Color3u8::operator[](int i) {
+/*u8& Color3u8::operator[](int i) {
     assert(i >= 0 && i < 3);
     return (&r)[i];
 }
@@ -56,6 +56,6 @@ const u8& Color4u8::operator[](int i)const {
 
 Color4u8::operator glm::vec4()const {
     return { r / 255.f, g / 255.f, b / 255.f, a / 255.f };
-}
+}*/
 
 }

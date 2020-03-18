@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE QtCreatorProject>
-<!-- Written by QtCreator 4.11.0, 2020-03-15T23:05:09. -->
+<!-- Written by QtCreator 4.11.0, 2020-03-18T22:51:36. -->
 <qtcreator>
  <data>
   <variable>EnvironmentId</variable>
@@ -691,7 +691,7 @@
     <value type="QString" key="ProjectExplorer.ProjectConfiguration.DisplayName">tg_tests</value>
     <value type="QString" key="ProjectExplorer.ProjectConfiguration.Id">CMakeProjectManager.CMakeRunConfiguration.tg_tests</value>
     <value type="QString" key="ProjectExplorer.RunConfiguration.BuildKey">tg_tests</value>
-    <value type="QString" key="RunConfiguration.Arguments">0</value>
+    <value type="QString" key="RunConfiguration.Arguments"></value>
     <value type="bool" key="RunConfiguration.Arguments.multi">false</value>
     <value type="QString" key="RunConfiguration.OverrideDebuggerStartup"></value>
     <value type="bool" key="RunConfiguration.UseCppDebugger">false</value>
@@ -701,7 +701,7 @@
     <value type="bool" key="RunConfiguration.UseQmlDebugger">false</value>
     <value type="bool" key="RunConfiguration.UseQmlDebuggerAuto">true</value>
     <value type="bool" key="RunConfiguration.UseTerminal">true</value>
-    <value type="QString" key="RunConfiguration.WorkingDirectory"></value>
+    <value type="QString" key="RunConfiguration.WorkingDirectory">/home/tuket/prog/gltf_viewer/data</value>
     <value type="QString" key="RunConfiguration.WorkingDirectory.default">/home/tuket/prog/build-gltf_viewer-Imported_Kit_temporary-Debug/libs/tg</value>
    </valuemap>
    <valuemap type="QVariantMap" key="ProjectExplorer.Target.RunConfiguration.2">
