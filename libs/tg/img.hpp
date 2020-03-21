@@ -46,6 +46,7 @@ public:
     ~Img() { free(ImgView<T>::_data); }
 
     static Img<T> load(const char* fileName);
+    bool save(const char* fileName, int quality = 90); // quality is only used for jpeg and should be in range [1, 100]
 };
 
 enum class ECubeImgFace { LEFT, RIGHT, DOWN, UP, FRONT, BACK };

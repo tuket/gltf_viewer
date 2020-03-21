@@ -39,5 +39,6 @@ bool test_cylinderMapToCubeMap()
     };
     auto cubeImgView = tg::CubeImgView3f::createFromSingleImg(cubeImg, cubeImgSize, cubeFacesCoords);
     tg::cylinderMapToCubeMap(cubeImgView, img);
+    cubeImg.save();
     return true;
 }

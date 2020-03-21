@@ -48,7 +48,7 @@ struct rect : RectCommonStuff<rect, glm::vec2, float>
 {
     rect() {}
     rect(const rect& o) : RectCommonStuff(o) {}
-    rect(float xMin, float yMin, float xMax, float yMax) : RectCommonStuff(xMin, yMin, xMin, xMax) {}
+    rect(float xMin, float yMin, float xMax, float yMax) : RectCommonStuff(xMin, yMin, xMax, yMax) {}
     rect(const glm::vec2& pMin, const glm::vec2& pMax) : RectCommonStuff(pMin, pMax) {}
     rect(float w, float h) : RectCommonStuff(w, h) {}
     rect(const glm::vec2& size) : RectCommonStuff(size) {}

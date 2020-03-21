@@ -8,4 +8,5 @@ bool isPointInsideRect(glm::vec2 p, const tl::rect& r);
 bool isPointInsideQuad(glm::vec2 p, tl::CSpan<glm::vec2> q);
 
 float triangleArea(glm::vec2 a, glm::vec2 b, glm::vec2 c);
+float convexPolyArea(tl::CSpan<glm::vec2> poly);
 float intersectionArea_square_quad(const tl::rect& s, tl::CSpan<glm::vec2> q);

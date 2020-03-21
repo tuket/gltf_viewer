@@ -45,8 +45,9 @@ bool isPointInsideQuad(glm::vec2 p, tl::CSpan<glm::vec2> q)
     auto turn90DegCW = [](vec2 p) -> vec2{
         return {p.y, -p.x};
     };
-    for(int i = 0; i < (int)q.size(); i++) {
-        if(dot(turn90DegCW(q[1] - q[0]), p - q[0]) >= 0)
+    const int n = (int)q.size();
+    for(int i = 0; i < n; i++) {
+        if(dot(turn90DegCW(q[(i+1)%n] - q[i]), p - q[i]) >= 0)
             return false;
     }
     return true;
@@ -66,14 +67,26 @@ float triangleArea(vec2 a, vec2 b, vec2 c)
     return abs(0.5f * dot(v1p, v2));
 }
 
-float intersectionArea_square_quad(const tl::rect& s, tl::CSpan<glm::vec2> q)
+float convexPolyArea(tl::CSpan<vec2> poly)
+{
+    if(poly.size() < 3)
+        return 0;
+    const size_t n = poly.size();
+    // sum the area for the fan triangles
+    float area = triangleArea(poly[0], poly[n-2], poly[n-1]);
+    for(size_t i1 = 1, i2 = 2; i2 < n; i1++, i2++)
+        area += triangleArea(poly[0], poly[i1], poly[i2]);
+    return area;
+}
+
+float intersectionArea_square_quad(const tl::rect& s, tl::CSpan<vec2> q)
 {
     assert(q.size() == 4);
     const vec2 sp[4] = { // square points;
         s.pMin,
-        {s.pMin.x, s.pMax.y},
         {s.pMax.x, s.pMin.y},
-        s.pMax
+        s.pMax,
+        {s.pMin.x, s.pMax.y},
     };
     const bool sInsideQ[4] = {
         isPointInsideQuad(sp[0], q),
@@ -110,7 +123,11 @@ float intersectionArea_square_quad(const tl::rect& s, tl::CSpan<glm::vec2> q)
                     q2 = sp;
                     return i;
                 }
+            return -1;
         }();
+        if(i == -1)
+            return 0; // THIS IS WRONG!
+
         tl::FVector<vec2, 8> areaPoly; // the points that define the the polygon of the intersection
         tl::FVector<vec2, 2> intersectionPoints; // temp intersection points of two lines
         const int end = (i + 4) % 4;
@@ -121,10 +138,12 @@ float intersectionArea_square_quad(const tl::rect& s, tl::CSpan<glm::vec2> q)
                 const int j1 = (j+1) % 4;
                 vec2 intersectionPoint;
                 if(segmentIntersect(intersectionPoint, q1[i], q1[i1], q2[j], q2[j1])) {
-                    intersectionPoints.push_back(intersectionPoint);
+                    if(intersectionPoints.size() && intersectionPoint != intersectionPoints.back())
+                        intersectionPoints.push_back(intersectionPoint);
                 }
             }
-            i++;
+            i = (i+1) % 4;
         } while(i != end);
+        return convexPolyArea(areaPoly);
     }
 }

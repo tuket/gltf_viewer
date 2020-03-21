@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE QtCreatorProject>
-<!-- Written by QtCreator 4.11.0, 2020-03-18T22:51:36. -->
+<!-- Written by QtCreator 4.11.0, 2020-03-20T18:56:33. -->
 <qtcreator>
  <data>
   <variable>EnvironmentId</variable>
@@ -691,7 +691,7 @@
     <value type="QString" key="ProjectExplorer.ProjectConfiguration.DisplayName">tg_tests</value>
     <value type="QString" key="ProjectExplorer.ProjectConfiguration.Id">CMakeProjectManager.CMakeRunConfiguration.tg_tests</value>
     <value type="QString" key="ProjectExplorer.RunConfiguration.BuildKey">tg_tests</value>
-    <value type="QString" key="RunConfiguration.Arguments"></value>
+    <value type="QString" key="RunConfiguration.Arguments">1</value>
     <value type="bool" key="RunConfiguration.Arguments.multi">false</value>
     <value type="QString" key="RunConfiguration.OverrideDebuggerStartup"></value>
     <value type="bool" key="RunConfiguration.UseCppDebugger">false</value>

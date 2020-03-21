@@ -2,6 +2,7 @@
 
 #include <tl/int_types.hpp>
 #include <tl/move.hpp>
+#include <tl/span.hpp>
 #include <initializer_list>
 #include <new>
 #include <assert.h>
@@ -15,6 +16,8 @@ class FVector
 public:
     constexpr FVector() : _size(0) {}
     constexpr FVector(std::initializer_list<T> l);
+    operator Span<T>() { return Span<T>(begin(), size()); }
+    operator Span<const T>()const { return Span<const T>(begin(), size()); }
     
     T& operator[](size_t i);
     const T& operator[](size_t i)const;
