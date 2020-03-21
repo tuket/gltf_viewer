@@ -31,8 +31,8 @@ Img<vec3> Img<glm::vec3>::load(const char* fileName)
     return img;
 }
 
-template <>
-bool Img<vec3>::save(const char* fileName, int quality)
+template <int NUM_CHANNELS>
+static int saveImgFloatN(const char* fileName, void* data, int w, int h, int stride, int quality)
 {
     const char* ext = nullptr;
     for(const char* c = fileName; *c; c++)
@@ -45,22 +45,28 @@ bool Img<vec3>::save(const char* fileName, int quality)
     switch (ext[0])
     {
         case 'b':
-            okay = stbi_write_bmp(fileName, _w, _h, 3, _data);
+            okay = stbi_write_bmp(fileName, w, h, NUM_CHANNELS, data);
             break;
         case 'p':
-            okay = stbi_write_png(fileName, _w, _h, 3, _data, _stride*sizeof(vec3));
+            okay = stbi_write_png(fileName, w, h, NUM_CHANNELS, data, stride*sizeof(float)*NUM_CHANNELS);
             break;
         case 'j':
-            okay = stbi_write_jpg(fileName, _w, _h, 3, _data, quality);
+            okay = stbi_write_jpg(fileName, w, h, NUM_CHANNELS, data, quality);
             break;
         case 't':
-            okay = stbi_write_tga(fileName, _w, _h, 3, _data);
+            okay = stbi_write_tga(fileName, w, h, NUM_CHANNELS, data);
             break;
         case 'h':
-            okay = stbi_write_hdr(fileName, _w, _h, 2, (float*)_data);
+            okay = stbi_write_hdr(fileName, w, h, NUM_CHANNELS, (float*)data);
             break;
     }
     return okay;
+}
+
+template <>
+bool Img<vec3>::save(const char* fileName, int quality)
+{
+    return saveImgFloatN<3>(fileName, _data, _w, _h, _stride, quality);
 }
 
 }
