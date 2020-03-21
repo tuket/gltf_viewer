@@ -3,12 +3,32 @@
 #include <tl/containers/table.hpp>
 #include <glm/vec3.hpp>
 #include <glm/glm.hpp>
+#include <glm/gtc/constants.hpp>
 #include <stb/stbi.h>
 #include "geometry_utils.hpp"
 #include <tl/basic.hpp>
 
 using glm::vec2;
 using glm::vec3;
+
+constexpr float PI = glm::pi<float>();
+constexpr float PI2 = 2*PI;
+
+/*
+         +---------+
+         |         |
+         |   up    |
+         |         |
++---------------------------+--------+
+|        |         |        |        |
+|  left  |  front  |  right |  back  |
+|        |         |        |        |
++---------------------------+--------+
+         |         |
+         |  down   |
+         |         |
+         +---------+
+*/
 
 namespace tg
 {
@@ -66,40 +86,40 @@ void cylinderMapToCubeMap(CubeImgView3f cube, CImg3f cylindricMap)
         switch (eFace)
         {
         case ECubeImgFace::LEFT:
-            rays[0] = {-1, (y-s05)/s05,   (s05-x)/s05};
-            rays[1] = {-1, (y-s05)/s05,   (s05-x-1)/s05};
-            rays[2] = {-1, (y-s05+1)/s05, (s05-x-1)/s05};
-            rays[3] = {-1, (y-s05+1)/s05, (s05-x)/s05};
+            rays[0] = {-1, (y-s05)/s05,   (x-s05)/s05};
+            rays[1] = {-1, (y-s05)/s05,   (x-s05+1)/s05};
+            rays[2] = {-1, (y-s05+1)/s05, (x-s05+1)/s05};
+            rays[3] = {-1, (y-s05+1)/s05, (x-s05)/s05};
             break;
         case ECubeImgFace::RIGHT:
-            rays[0] = {1, (y-s05)/s05,   (x-s05)/s05};
-            rays[1] = {1, (y-s05)/s05,   (x-s05+1)/s05};
-            rays[2] = {1, (y-s05+1)/s05, (x-s05+1)/s05};
-            rays[3] = {1, (y-s05+1)/s05, (x-s05)/s05};
+            rays[0] = {1, (y-s05)/s05,   (s05-x)/s05};
+            rays[1] = {1, (y-s05)/s05,   (s05-x-1)/s05};
+            rays[2] = {1, (y-s05+1)/s05, (s05-x-1)/s05};
+            rays[3] = {1, (y-s05+1)/s05, (s05-x)/s05};
             break;
         case ECubeImgFace::DOWN:
-            rays[0] = {(x-s05)/s05,   -1, (s05-y)/s05};
-            rays[1] = {(x-s05+1)/s05, -1, (s05-y)/s05};
-            rays[2] = {(x-s05+1)/s05, -1, (s05-y-1)/s05};
-            rays[3] = {(x-s05)/s05,   -1, (s05-y-1)/s05};
+            rays[0] = {(x-s05)/s05,   1, (s05-y)/s05};
+            rays[1] = {(x-s05+1)/s05, 1, (s05-y)/s05};
+            rays[2] = {(x-s05+1)/s05, 1, (s05-y-1)/s05};
+            rays[3] = {(x-s05)/s05,   1, (s05-y-1)/s05};
             break;
         case ECubeImgFace::UP:
-            rays[0] = {(x-s05)/s05,   1, (y-s05)/s05};
-            rays[1] = {(x-s05+1)/s05, 1, (y-s05)/s05};
-            rays[2] = {(x-s05+1)/s05, 1, (y-s05+1)/s05};
-            rays[3] = {(x-s05)/s05,   1, (y-s05+1)/s05};
+            rays[0] = {(x-s05)/s05,   -1, (y-s05)/s05};
+            rays[1] = {(x-s05+1)/s05, -1, (y-s05)/s05};
+            rays[2] = {(x-s05+1)/s05, -1, (y-s05+1)/s05};
+            rays[3] = {(x-s05)/s05,   -1, (y-s05+1)/s05};
             break;
         case ECubeImgFace::FRONT:
             rays[0] = {(x-s05)/s05,   (y-s05)/s05,   1};
             rays[1] = {(x+1-s05)/s05, (y-s05)/s05,   1};
-            rays[2] = {(x+1-s05)/s05, (y+1-s05)/s05, 1};
-            rays[3] = {(x-s05)/s05,   (y+1-s05)/s05, 1};
+            rays[2] = {(x+1-s05)/s05, (y-s05+1)/s05, 1};
+            rays[3] = {(x-s05)/s05,   (y-s05+1)/s05, 1};
             break;
         case ECubeImgFace::BACK:
-            rays[0] = {(x-s05)/s05,   (y-s05)/s05,   -1};
-            rays[1] = {(x+1-s05)/s05, (y-s05)/s05,   -1};
-            rays[2] = {(x+1-s05)/s05, (y+1-s05)/s05, -1};
-            rays[3] = {(x-s05)/s05,   (y+1-s05)/s05, -1};
+            rays[0] = {(s05-x)/s05,   (y-s05)/s05,   -1};
+            rays[1] = {(s05-x-1)/s05, (y-s05)/s05,   -1};
+            rays[2] = {(s05-x-1)/s05, (y-s05+1)/s05, -1};
+            rays[3] = {(s05-x)/s05,   (y-s05+1)/s05, -1};
             break;
         }
     };
@@ -118,10 +138,17 @@ void cylinderMapToCubeMap(CubeImgView3f cube, CImg3f cylindricMap)
             for(int i = 0; i < 4; i++) {
                 vec3& r = rays[i];
                 r = glm::normalize(r); // project onto unit sphere
-                texCoords[i] = { r.y, glm::normalize(vec2{r.x, r.z}).x }; // project onto cylinder
-                texCoords[i] = 0.5f * (texCoords[i] + vec2(1)) * vec2(cylindricMap.width(), cylindricMap.height());
+                // project onto cylinder
+                float angle = atan2f(r.x, r.z) + PI;
+                texCoords[i] = {angle / PI2, r.y};
+                assert(texCoords[i].x >= 0 && texCoords[i].x <= 1);
+                texCoords[i].x *= cylindricMap.width();
+                texCoords[i].y = cylindricMap.height() * 0.5f * (texCoords[i].y + 1);
             }
             cube[eFace](x, y) = sampleImgQuad(cylindricMap, texCoords);
+            //cube[eFace](x, y) = cylindricMap(x, y);
+            //const vec3 colors[6] = {{1,0,0}, {0,1,0}, {0,0,1}, {1,1,1}, {1,1,0}, {0,1,1}};
+            //cube[eFace](x, y) = colors[(int)eFace];
         }
     }
 }

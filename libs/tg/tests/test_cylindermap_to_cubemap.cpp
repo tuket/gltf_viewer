@@ -27,18 +27,18 @@ bool test_cylinderMapToCubeMap()
     auto img = tg::Img3f::load("mercator.jpg");
     if(!img.data())
         return false;
-    tg::Img3f cubeImg(img.width(), img.height());
-    const int cubeImgSize = img.height()/2;
+    const int faceSize = img.height()/2;
+    tg::Img3f cubeImg(4*faceSize, 3*faceSize);
     const ivec2 cubeFacesCoords[6] = {
-        {0,               cubeImgSize/3   }, // LEFT
-        {cubeImgSize/2,   cubeImgSize/3   }, // RIGHT
-        {cubeImgSize/4,   cubeImgSize*2/3 }, // DOWN
-        {cubeImgSize/4,   0               }, // UP
-        {cubeImgSize/4,   cubeImgSize/3   }, // FRONT
-        {cubeImgSize*3/4, cubeImgSize/3   }  // BACK
+        {0*faceSize, 1*faceSize}, // LEFT
+        {2*faceSize, 1*faceSize}, // RIGHT
+        {1*faceSize, 2*faceSize}, // DOWN
+        {1*faceSize, 0*faceSize}, // UP
+        {1*faceSize, 1*faceSize}, // FRONT
+        {3*faceSize, 1*faceSize}  // BACK
     };
-    auto cubeImgView = tg::CubeImgView3f::createFromSingleImg(cubeImg, cubeImgSize, cubeFacesCoords);
+    auto cubeImgView = tg::CubeImgView3f::createFromSingleImg(cubeImg, faceSize, cubeFacesCoords);
     tg::cylinderMapToCubeMap(cubeImgView, img);
-    cubeImg.save();
+    cubeImg.save("output_cube_map.png");
     return true;
 }

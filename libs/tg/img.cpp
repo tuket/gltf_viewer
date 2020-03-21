@@ -2,6 +2,7 @@
 
 #include <stb/stbi.h>
 #include <stb/stb_image_write.h>
+#include <math.h>
 
 using glm::vec3;
 using glm::vec4;
@@ -32,7 +33,7 @@ Img<vec3> Img<glm::vec3>::load(const char* fileName)
 }
 
 template <int NUM_CHANNELS>
-static int saveImgFloatN(const char* fileName, void* data, int w, int h, int stride, int quality)
+static int saveImgFloatN(const char* fileName, const void* data, int w, int h, int stride, int quality)
 {
     const char* ext = nullptr;
     for(const char* c = fileName; *c; c++)
@@ -41,25 +42,37 @@ static int saveImgFloatN(const char* fileName, void* data, int w, int h, int str
     if(!ext)
         return false;
     ext++;
+    auto dataF = (const float*)data;
+    u8* dataU8 = nullptr;
+    if(ext[0] == 'b' || ext[0] == 'p' || ext[0] == 'j' || ext[0] == 't') {
+        dataU8 = new u8[w*h*NUM_CHANNELS];
+        const float invGamma = 1.f / 2.2f;
+        int i = 0;
+        for(int y = 0; y < h; y++)
+        for(int x = 0; x < w; x++)
+        for(int c = 0; c < NUM_CHANNELS; c++, i++)
+            dataU8[i] = (u8)(255 * pow(dataF[i], invGamma));
+    }
     int okay = 0;
     switch (ext[0])
     {
         case 'b':
-            okay = stbi_write_bmp(fileName, w, h, NUM_CHANNELS, data);
+            okay = stbi_write_bmp(fileName, w, h, NUM_CHANNELS, dataU8);
             break;
         case 'p':
-            okay = stbi_write_png(fileName, w, h, NUM_CHANNELS, data, stride*sizeof(float)*NUM_CHANNELS);
+            okay = stbi_write_png(fileName, w, h, NUM_CHANNELS, dataU8, stride*sizeof(u8)*NUM_CHANNELS);
             break;
         case 'j':
-            okay = stbi_write_jpg(fileName, w, h, NUM_CHANNELS, data, quality);
+            okay = stbi_write_jpg(fileName, w, h, NUM_CHANNELS, dataU8, quality);
             break;
         case 't':
-            okay = stbi_write_tga(fileName, w, h, NUM_CHANNELS, data);
+            okay = stbi_write_tga(fileName, w, h, NUM_CHANNELS, dataU8);
             break;
         case 'h':
-            okay = stbi_write_hdr(fileName, w, h, NUM_CHANNELS, (float*)data);
+            okay = stbi_write_hdr(fileName, w, h, NUM_CHANNELS, dataF);
             break;
     }
+    delete[] dataU8;
     return okay;
 }
 

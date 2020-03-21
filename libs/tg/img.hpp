@@ -14,7 +14,7 @@ class ImgView
 {
 public:
     ImgView() : _w(0), _h(0), _stride(0), _data(nullptr) {}
-    ImgView(int w, int h, T* data) : _w(h), _h(h), _stride(w), _data(data) {}
+    ImgView(int w, int h, T* data) : _w(w), _h(h), _stride(w), _data(data) {}
     ImgView(int w, int h, int stride, T* data) : _w(w), _h(h), _stride(stride), _data(data) {}
     operator ImgView<const T>()const { return ImgView<const T>(_w, _h, _data); }
 

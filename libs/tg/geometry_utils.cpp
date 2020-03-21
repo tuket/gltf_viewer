@@ -81,6 +81,7 @@ float convexPolyArea(tl::CSpan<vec2> poly)
 
 float intersectionArea_square_quad(const tl::rect& s, tl::CSpan<vec2> q)
 {
+    return 1;
     assert(q.size() == 4);
     const vec2 sp[4] = { // square points;
         s.pMin,
