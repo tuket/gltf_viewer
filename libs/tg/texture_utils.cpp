@@ -146,9 +146,6 @@ void cylinderMapToCubeMap(CubeImgView3f cube, CImg3f cylindricMap)
                 texCoords[i].y = cylindricMap.height() * 0.5f * (texCoords[i].y + 1);
             }
             cube[eFace](x, y) = sampleImgQuad(cylindricMap, texCoords);
-            //cube[eFace](x, y) = cylindricMap(x, y);
-            //const vec3 colors[6] = {{1,0,0}, {0,1,0}, {0,0,1}, {1,1,1}, {1,1,0}, {0,1,1}};
-            //cube[eFace](x, y) = colors[(int)eFace];
         }
     }
 }

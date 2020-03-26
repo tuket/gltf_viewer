@@ -1,42 +1,88 @@
 #include "geometry_utils.hpp"
 
 #include <glm/glm.hpp>
+#include <glm/gtx/norm.hpp>
 #include <tl/containers/fvector.hpp>
 #include <tl/basic_math.hpp>
 #include <tl/basic.hpp>
 
 using glm::vec2;
 
-bool segmentIntersect(vec2& out, vec2 a0, vec2 a1, vec2 b0, vec2 b1)
+int segmentsIntersect(vec2 (&out)[2], vec2 a0, vec2 a1, vec2 b0, vec2 b1)
 {
+    constexpr float EPSILON = 0.0001f;
     const float alphaDenominator =
         (a0.x - a1.x) * (b1.y - b0.y) -
         (a0.y - a1.y) * (b1.x - b0.x);
-    if(alphaDenominator * alphaDenominator < 0.01f)
-        return false;
-
-    const float betaDenominator =
-        (a0.y - a1.y) * (b1.x - b0.x) -
-        (a0.x - a1.x) * (b1.y - b0.y);
-    if(betaDenominator * betaDenominator < 0.01f)
-        return false;
-
     const float alphaNumerator =
         (b1.x - a1.x) * (b1.y - b0.y) -
         (b1.y - a1.y) * (b1.x - b0.x);
-    const float alpha = alphaNumerator / alphaDenominator;
-    if(alpha < 0 || alpha > 1)
-        return false;
-
+    const float betaDenominator =
+        (a0.y - a1.y) * (b1.x - b0.x) -
+        (a0.x - a1.x) * (b1.y - b0.y);
     const float betaNumerator =
         (b1.x - a1.x) * (a0.y - a1.y) -
         (b1.y - a1.y) * (a0.x - a1.x);
-    const float beta = betaNumerator / betaDenominator;
-    if(beta < 0 || beta > 1)
-        return false;
 
-    out = mix(a1, a0, alpha);
-    return true;
+    if(alphaDenominator * alphaDenominator > EPSILON)
+    {
+        // segments are NOT parallel
+        const float alpha = alphaNumerator / alphaDenominator;
+        if(alpha < 0 || alpha > 1)
+            return 0;
+
+        const float beta = betaNumerator / betaDenominator;
+        if(beta < 0 || beta > 1)
+            return 0;
+
+        out[0] = mix(a1, a0, alpha);
+        return 1;
+    }
+    else // segments are parallel
+    {
+        if(alphaNumerator * alphaNumerator > EPSILON) // segments don't lie on the same line
+            return 0;
+        // return -1 if before the segment, 0 if in between, and +1 if after
+        auto pointRelPos = [](vec2 p, vec2 seg0, vec2 seg1)
+        {
+            if(dot(seg1-seg0, p-seg0) < 0)
+                return -1;
+            if(glm::distance2(seg0, p) > glm::distance2(seg0, seg1))
+                return +1;
+            return 0;
+        };
+        const int relPosB0 = pointRelPos(b0, a0, a1);
+        const int relPosB1 = pointRelPos(b1, a0, a1);
+        if(relPosB0 == -1)
+        {
+            if(relPosB1 == -1)
+                return 0;
+            else {
+                out[0] = a0;
+                if(relPosB1 == 0)
+                    out[1] = b1;
+                else
+                    out[1] = a1;
+            }
+        }
+        else if(relPosB0 == 0)
+        {
+            out[0] = b0;
+            if(relPosB1 == 0)
+                out[1] = b1;
+            else
+                out[1] = a1;
+        }
+        else // relPosB0 == 1
+        {
+            return 0;
+        }
+
+        if(out[0] == out[0])
+            return 1;
+        else
+            return 2;
+    }
 }
 
 // points in a quad must be in CCW order
@@ -81,70 +127,167 @@ float convexPolyArea(tl::CSpan<vec2> poly)
 
 float intersectionArea_square_quad(const tl::rect& s, tl::CSpan<vec2> q)
 {
-    return 1;
     assert(q.size() == 4);
-    const vec2 sp[4] = { // square points;
+    const vec2 sp[4] = {
         s.pMin,
         {s.pMax.x, s.pMin.y},
         s.pMax,
-        {s.pMin.x, s.pMax.y},
+        {s.pMin.x, s.pMax.y}
     };
-    const bool sInsideQ[4] = {
+    auto edgePos0 = [&](int e) {
+        return e < 4 ? sp[e] : q[e-4];
+    };
+    auto edgePos1 = [&](int e) {
+        if(e < 4)
+            return sp[(e+1) % 4];
+        else
+            return q[(e-4+1) % 4];
+    };
+    auto nextEdge = [](int e) {
+        if(e < 4)
+            return (e+1) % 4;
+        else
+            return 4 + (e-4+1) % 4;
+    };
+    auto approxEqual = [](vec2 a, vec2 b) {
+        return glm::distance2(a, b) < 0.0001f;
+    };
+    /*auto segmentVsQuadIntersect = [&](int& outEdge, vec2 &outPoint, int inEdge) -> bool
+    {
+        vec2 a, b;
+        const vec2* oq; //< other quad
+        if(inEdge < 4) {
+            a = sp[inEdge];
+            b = sp[(inEdge+1)%4];
+            oq = q;
+            outEdge = 4;
+        }
+        else {
+            a = q[inEdge-4];
+            b = q[(inEdge-4+1)%4];
+            oq = sp;
+            outEdge = 0;
+        }
+        for(int i = 0; i < 4; i++)
+        if(segmentsIntersect(outPoint, a, b, oq[i], oq[(i+1)%4])) {
+            outEdge += i;
+            return true;
+        }
+        return false;
+    };*/
+    auto segmentVsQuadIntersect2 = [&](int (&outEdges)[2], vec2 (&outPoints)[2], int inEdge) -> int
+    {
+        vec2 a, b;
+        const vec2* oq; //< other quad
+        if(inEdge < 4) {
+            a = sp[inEdge];
+            b = sp[(inEdge+1)%4];
+            oq = q;
+            outEdges[0] = outEdges[1] = 4;
+        }
+        else {
+            a = q[inEdge-4];
+            b = q[(inEdge-4+1)%4];
+            oq = sp;
+            outEdges[0] = outEdges[1] = 0;
+        }
+        int np = 0;
+        for(int i = 0; i < 4; i++)
+        if(segmentIntersect(outPoints[np], a, b, oq[i], oq[(i+1)%4])) {
+            outEdges[np] = i;
+            np++;
+        }
+        if(np == 2)
+        {
+            const float d0 = glm::distance2(a, outPoints[0]);
+            const float d1 = glm::distance2(a, outPoints[1]);
+            if(d0 > d1) {
+                tl::swap(outEdges[0], outEdges[1]);
+                tl::swap(outPoints[0], outPoints[1]);
+            }
+            else if(fabs(d1 - d0) < 0.0001f)
+                np--;
+        }
+        return np;
+    };
+    const bool pInside[8] = {
+        isPointInsideRect(q[0], s),
+        isPointInsideRect(q[1], s),
+        isPointInsideRect(q[2], s),
+        isPointInsideRect(q[3], s),
         isPointInsideQuad(sp[0], q),
         isPointInsideQuad(sp[1], q),
         isPointInsideQuad(sp[2], q),
         isPointInsideQuad(sp[3], q)
     };
-    const bool qInsideS[4] = {
-        isPointInsideRect(q[0], s),
-        isPointInsideRect(q[1], s),
-        isPointInsideRect(q[2], s),
-        isPointInsideRect(q[3], s),
-    };
-    if(sInsideQ[0] && sInsideQ[1] && sInsideQ[2] && sInsideQ[3]) { // square inside quad
+    if(pInside[0] && pInside[1] && pInside[2] && pInside[3]) { // square inside quad
         const float w = s.pMax.x - s.pMin.x;
         return w*w;
     }
-    else if(qInsideS[0] && qInsideS[1] && qInsideS[2] && qInsideS[3]) { // quad inside square
+    if(pInside[4] && pInside[5] && pInside[6] && pInside[7]) { // quad inside square
         return triangleArea(q[0], q[1], q[2]) + triangleArea(q[2], q[3], q[0]);
     }
-    else {
-        const vec2* q1;
-        const vec2* q2;
-        int i = [&]() {
-            for(int i = 0; i < 4; i ++)
-                if(sInsideQ[i]) {
-                    q1 = sp;
-                    q2 = q.begin();
-                    return i;
-                }
-            for(int i = 0; i < 4; i++)
-                if(qInsideS[i]) {
-                    q1 = q.begin();
-                    q2 = sp;
-                    return i;
-                }
-            return -1;
-        }();
-        if(i == -1)
-            return 0; // THIS IS WRONG!
 
-        tl::FVector<vec2, 8> areaPoly; // the points that define the the polygon of the intersection
-        tl::FVector<vec2, 2> intersectionPoints; // temp intersection points of two lines
-        const int end = (i + 4) % 4;
-        do {
-            const int i1 = (i + 1) % 4;
-            intersectionPoints.clear();
-            for(int j = 0; j < 4; j++) {
-                const int j1 = (j+1) % 4;
-                vec2 intersectionPoint;
-                if(segmentIntersect(intersectionPoint, q1[i], q1[i1], q2[j], q2[j1])) {
-                    if(intersectionPoints.size() && intersectionPoint != intersectionPoints.back())
-                        intersectionPoints.push_back(intersectionPoint);
-                }
-            }
-            i = (i+1) % 4;
-        } while(i != end);
-        return convexPolyArea(areaPoly);
+    tl::FVector<vec2, 8> poly; // here we compute the intersection polygon
+    auto addVert = [&](vec2 p) {
+        if(!approxEqual(poly.back(), p))
+            poly.push_back(p);
+    };
+    bool prevWasInside = false;
+    if(pInside[0]) {
+        poly.push_back(q[0]);
+        prevWasInside = true;
     }
+    int curEdge = 0;
+    while(poly.size() < 8)
+    {
+        int numInserted = 1;
+        if(prevWasInside)
+        {
+            int intersectedEdges[2];
+            vec2 intersectionPoints[2];
+            const int numIntersectionPoints = segmentVsQuadIntersect2(intersectedEdges, intersectionPoints, curEdge);
+            if(numIntersectionPoints) {
+                for(int i = 0; i < numIntersectionPoints; i++)
+                    poly.push_back(intersectionPoints[i]);
+                prevWasInside = false;
+                curEdge = intersectedEdges[1];
+            }
+            else {
+                poly.push_back(edgePos1(curEdge));
+                curEdge = nextEdge(curEdge);
+            }
+        }
+        else // !prevWasInside
+        {
+            int intersectedEdges[2];
+            vec2 intersectionPoints[2];
+            int numIntersections = segmentVsQuadIntersect2(intersectedEdges, intersectionPoints, curEdge);
+            if(numIntersections == 0) {
+                poly.push_back(edgePos1(curEdge));
+                curEdge = nextEdge(curEdge);
+            }
+            else if(numIntersections == 1) {
+                poly.push_back(intersectionPoints[0]);
+                curEdge = intersectedEdges[0];
+                prevWasInside = true;
+            }
+            else { // numIntersections == 2
+                poly.push_back(intersectionPoints[0]);
+                poly.push_back(intersectionPoints[1]);
+                curEdge = intersectedEdges[1];
+                numInserted = 2;
+            }
+        }
+        if(poly.size() >= 3) {
+            if(approxEqual(poly[0], poly.back()))
+                break;
+            if(numInserted == 2 && approxEqual(poly[0], poly[poly.size()-2])) {
+                poly.pop_back();
+                break;
+            }
+        }
+    }
+    const float area = convexPolyArea(poly);
+    return area;
 }
