@@ -143,7 +143,7 @@ float intersectionArea_square_quad(const tl::rect& s, tl::CSpan<vec2> q)
         else
             return q[(e-4+1) % 4];
     };
-    auto nextEdge = [](int e) {
+    auto calcNextEdge = [](int e) {
         if(e < 4)
             return (e+1) % 4;
         else
@@ -152,61 +152,47 @@ float intersectionArea_square_quad(const tl::rect& s, tl::CSpan<vec2> q)
     auto approxEqual = [](vec2 a, vec2 b) {
         return glm::distance2(a, b) < 0.0001f;
     };
-    /*auto segmentVsQuadIntersect = [&](int& outEdge, vec2 &outPoint, int inEdge) -> bool
+    auto segmentVsQuadIntersect2 = [&](int (&outEdges)[2], vec2 (&outPoints)[2], int inEdge, vec2 inPos) -> int
     {
-        vec2 a, b;
+        const vec2 a = inPos;
+        const vec2 b = edgePos1(inEdge);
         const vec2* oq; //< other quad
         if(inEdge < 4) {
-            a = sp[inEdge];
-            b = sp[(inEdge+1)%4];
-            oq = q;
-            outEdge = 4;
-        }
-        else {
-            a = q[inEdge-4];
-            b = q[(inEdge-4+1)%4];
-            oq = sp;
-            outEdge = 0;
-        }
-        for(int i = 0; i < 4; i++)
-        if(segmentsIntersect(outPoint, a, b, oq[i], oq[(i+1)%4])) {
-            outEdge += i;
-            return true;
-        }
-        return false;
-    };*/
-    auto segmentVsQuadIntersect2 = [&](int (&outEdges)[2], vec2 (&outPoints)[2], int inEdge) -> int
-    {
-        vec2 a, b;
-        const vec2* oq; //< other quad
-        if(inEdge < 4) {
-            a = sp[inEdge];
-            b = sp[(inEdge+1)%4];
             oq = q;
             outEdges[0] = outEdges[1] = 4;
         }
         else {
-            a = q[inEdge-4];
-            b = q[(inEdge-4+1)%4];
             oq = sp;
             outEdges[0] = outEdges[1] = 0;
         }
+
         int np = 0;
         for(int i = 0; i < 4; i++)
-        if(segmentIntersect(outPoints[np], a, b, oq[i], oq[(i+1)%4])) {
-            outEdges[np] = i;
-            np++;
-        }
-        if(np == 2)
         {
-            const float d0 = glm::distance2(a, outPoints[0]);
-            const float d1 = glm::distance2(a, outPoints[1]);
-            if(d0 > d1) {
-                tl::swap(outEdges[0], outEdges[1]);
-                tl::swap(outPoints[0], outPoints[1]);
+            vec2 intersectPoints[2];
+            const int numIntersectPoints = segmentsIntersect(intersectPoints, a, b, oq[i], oq[(i+1)%4]);
+            if(numIntersectPoints == 0)
+                continue;
+            const int skipFirst = intersectPoints[0] == a;
+            for(int ii = skipFirst; ii < 2; ii++)
+            {
+                outEdges[np] = i;
+                outPoints[np] = intersectPoints[ii];
+                np++;
+                if(np == 2)
+                {
+                    if(numIntersectPoints == 2)
+                        return 2;
+                    const float d0 = glm::distance2(a, outPoints[0]);
+                    const float d1 = glm::distance2(a, outPoints[1]);
+                    if(d0 > d1) {
+                        tl::swap(outEdges[0], outEdges[1]);
+                        tl::swap(outPoints[0], outPoints[1]);
+                    }
+                    else if(fabs(d1 - d0) < 0.0001f)
+                        np--;
+                }
             }
-            else if(fabs(d1 - d0) < 0.0001f)
-                np--;
         }
         return np;
     };
@@ -229,64 +215,33 @@ float intersectionArea_square_quad(const tl::rect& s, tl::CSpan<vec2> q)
     }
 
     tl::FVector<vec2, 8> poly; // here we compute the intersection polygon
-    auto addVert = [&](vec2 p) {
-        if(!approxEqual(poly.back(), p))
+    auto addVertToPoly = [&](vec2 p) {
+        if(poly.size() == 0 || !approxEqual(poly.back(), p))
             poly.push_back(p);
     };
-    bool prevWasInside = false;
     if(pInside[0]) {
         poly.push_back(q[0]);
-        prevWasInside = true;
     }
+    vec2 curPoint = q[0];
     int curEdge = 0;
     while(poly.size() < 8)
     {
-        int numInserted = 1;
-        if(prevWasInside)
+        int intersectedEdges[2];
+        vec2 intersectionPoints[2];
+        const int numIntersectionPoints = segmentVsQuadIntersect2(intersectedEdges, intersectionPoints, curEdge, curPoint);
+        if(numIntersectionPoints == 0)
         {
-            int intersectedEdges[2];
-            vec2 intersectionPoints[2];
-            const int numIntersectionPoints = segmentVsQuadIntersect2(intersectedEdges, intersectionPoints, curEdge);
-            if(numIntersectionPoints) {
-                for(int i = 0; i < numIntersectionPoints; i++)
-                    poly.push_back(intersectionPoints[i]);
-                prevWasInside = false;
-                curEdge = intersectedEdges[1];
-            }
-            else {
-                poly.push_back(edgePos1(curEdge));
-                curEdge = nextEdge(curEdge);
-            }
+            addVertToPoly(edgePos1(curEdge));
+            curEdge = calcNextEdge(curEdge);
         }
-        else // !prevWasInside
+        else
         {
-            int intersectedEdges[2];
-            vec2 intersectionPoints[2];
-            int numIntersections = segmentVsQuadIntersect2(intersectedEdges, intersectionPoints, curEdge);
-            if(numIntersections == 0) {
-                poly.push_back(edgePos1(curEdge));
-                curEdge = nextEdge(curEdge);
-            }
-            else if(numIntersections == 1) {
-                poly.push_back(intersectionPoints[0]);
-                curEdge = intersectedEdges[0];
-                prevWasInside = true;
-            }
-            else { // numIntersections == 2
-                poly.push_back(intersectionPoints[0]);
-                poly.push_back(intersectionPoints[1]);
-                curEdge = intersectedEdges[1];
-                numInserted = 2;
-            }
+            for(int i = 0; i < numIntersectionPoints; i++)
+                addVertToPoly(intersectionPoints[i]);
+            curEdge = intersectedEdges[numIntersectionPoints-1];
         }
-        if(poly.size() >= 3) {
-            if(approxEqual(poly[0], poly.back()))
-                break;
-            if(numInserted == 2 && approxEqual(poly[0], poly[poly.size()-2])) {
-                poly.pop_back();
-                break;
-            }
-        }
+        if(poly.size() >= 3 && approxEqual(poly[0], poly.back()))
+            break;
     }
     const float area = convexPolyArea(poly);
     return area;
