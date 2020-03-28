@@ -53,7 +53,7 @@ bool test_segmentIntersect()
     for(size_t i = 0; i < tl::size(tests); i++) {
         const Input& input = tests[i].input;
         Output output;
-        output.n = segmentsIntersect(output.p, input.a0, input.a1, input.b0, input.b1);
+        output.n = tg::segmentsIntersect(output.p, input.a0, input.a1, input.b0, input.b1);
         if(!verify(output, tests[i].expected)) {
             auto printOutput = [](const Output& o)
             {

@@ -8,6 +8,29 @@
 
 using glm::vec2;
 
+#include <tl/fmt.hpp>
+static int traceX, traceY;
+template <typename... Args>
+void trace(const Args&... args)
+{
+    if(traceX == 128 && traceY == 107)
+        tl::print(args...);
+}
+namespace tl
+{
+static void toStringBufferT(FmtBuffer& buffer, glm::vec2 v)
+{
+    buffer.writeAndAdvance("{");
+    toStringBufferT(buffer, v.x);
+    buffer.writeAndAdvance(", ");
+    toStringBufferT(buffer, v.y);
+    buffer.writeAndAdvance("}");
+}
+}
+
+namespace tg
+{
+
 int segmentsIntersect(vec2 (&out)[2], vec2 a0, vec2 a1, vec2 b0, vec2 b1)
 {
     constexpr float EPSILON = 0.0001f;
@@ -110,7 +133,7 @@ float triangleArea(vec2 a, vec2 b, vec2 c)
     const vec2 v1 = b - a;
     const vec2 v2 = c - a;
     const vec2 v1p = {v1.y, -v1.x};
-    return abs(0.5f * dot(v1p, v2));
+    return fabsf(0.5f * dot(v1p, v2));
 }
 
 float convexPolyArea(tl::CSpan<vec2> poly)
@@ -125,8 +148,10 @@ float convexPolyArea(tl::CSpan<vec2> poly)
     return area;
 }
 
-float intersectionArea_square_quad(const tl::rect& s, tl::CSpan<vec2> q)
+float intersectionArea_square_quad(const tl::rect& s, tl::CSpan<vec2> q, int myTraceX, int myTraceY)
 {
+    traceX = myTraceX;
+    traceY = myTraceY;
     assert(q.size() == 4);
     const vec2 sp[4] = {
         s.pMin,
@@ -174,9 +199,9 @@ float intersectionArea_square_quad(const tl::rect& s, tl::CSpan<vec2> q)
             if(numIntersectPoints == 0)
                 continue;
             const int skipFirst = intersectPoints[0] == a;
-            for(int ii = skipFirst; ii < 2; ii++)
+            for(int ii = skipFirst; ii < numIntersectPoints; ii++)
             {
-                outEdges[np] = i;
+                outEdges[np] += i;
                 outPoints[np] = intersectPoints[ii];
                 np++;
                 if(np == 2)
@@ -191,6 +216,7 @@ float intersectionArea_square_quad(const tl::rect& s, tl::CSpan<vec2> q)
                     }
                     else if(fabs(d1 - d0) < 0.0001f)
                         np--;
+                    return np;
                 }
             }
         }
@@ -216,33 +242,57 @@ float intersectionArea_square_quad(const tl::rect& s, tl::CSpan<vec2> q)
 
     tl::FVector<vec2, 8> poly; // here we compute the intersection polygon
     auto addVertToPoly = [&](vec2 p) {
-        if(poly.size() == 0 || !approxEqual(poly.back(), p))
+        if(poly.size() == 0 || !approxEqual(poly.back(), p)) {
+            if(poly.size() >= 3 && approxEqual(poly[0], p))
+                return true;
             poly.push_back(p);
+        }
+        return poly.size() == 8;
     };
-    if(pInside[0]) {
-        poly.push_back(q[0]);
-    }
-    vec2 curPoint = q[0];
+    vec2 curPoint = sp[0];
     int curEdge = 0;
-    while(poly.size() < 8)
+    /*if(pInside[0]) {
+        poly.push_back(q[0]);
+    }*/
+    //if(traceX == 372 && traceY == 106)
+    if(traceX == 196 && traceY == 82)
+    {
+        printf("blabkl\n");
+    }
+    bool finished = false;
+    while(!finished)
     {
         int intersectedEdges[2];
         vec2 intersectionPoints[2];
         const int numIntersectionPoints = segmentVsQuadIntersect2(intersectedEdges, intersectionPoints, curEdge, curPoint);
         if(numIntersectionPoints == 0)
         {
-            addVertToPoly(edgePos1(curEdge));
+            if(poly.size() > 0)
+                finished = addVertToPoly(edgePos1(curEdge));
             curEdge = calcNextEdge(curEdge);
+            curPoint = edgePos0(curEdge);
         }
         else
         {
             for(int i = 0; i < numIntersectionPoints; i++)
-                addVertToPoly(intersectionPoints[i]);
+                finished = addVertToPoly(intersectionPoints[i]);
             curEdge = intersectedEdges[numIntersectionPoints-1];
+            curPoint = intersectionPoints[numIntersectionPoints-1];
         }
-        if(poly.size() >= 3 && approxEqual(poly[0], poly.back()))
-            break;
+        if(poly.size() == 0 && curEdge == 0)
+            break; //< we have done a whole spin without finding intersections
     }
     const float area = convexPolyArea(poly);
     return area;
+}
+
+i8 calcPointSideWrtLine(glm::vec2 s0, glm::vec2 s1, glm::vec2 a)
+{
+    const vec2 s = s1 - s0;
+    const vec2 s_ = {s.y, -s.x}; // turn 90 degrees clock-wise
+    const float d = dot(s_, a-s0);
+    return d < 0 ? -1 :
+           d > 0 ? +1 : 0;
+}
+
 }

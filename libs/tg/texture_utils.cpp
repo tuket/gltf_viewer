@@ -45,6 +45,7 @@ FilterCubemapError filterCubemap(const char* inTexFileName, const char* outTexFi
     return FilterCubemapError::NONE;
 }
 
+/* The points in q must be in counter-clock-wise order */
 vec3 sampleImgQuad(CImg3f img, tl::CSpan<vec2> q)
 {
     float x0f = q[0].x;
@@ -71,7 +72,7 @@ vec3 sampleImgQuad(CImg3f img, tl::CSpan<vec2> q)
     for(int y = y0; y < y1; y++)
     for(int x = x0; x < x1; x++)
     {
-        const float area = intersectionArea_square_quad(tl::rect(x, y, x+1, y+1), q);
+        const float area = intersectionArea_square_quad(tl::rect(x, y, x+1, y+1), q, x, y);
         avg += area * img(x, y);
     }
     avg /= (x1-x0) * (y1-y0);
@@ -145,6 +146,8 @@ void cylinderMapToCubeMap(CubeImgView3f cube, CImg3f cylindricMap)
                 texCoords[i].x *= cylindricMap.width();
                 texCoords[i].y = cylindricMap.height() * 0.5f * (texCoords[i].y + 1);
             }
+            if(calcPointSideWrtLine(texCoords[0], texCoords[1], texCoords[2]) > 0) // make sure the quad is in counter-clock-wise order
+                tl::swap(texCoords[1], texCoords[2]);
             cube[eFace](x, y) = sampleImgQuad(cylindricMap, texCoords);
         }
     }

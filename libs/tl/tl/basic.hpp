@@ -1,6 +1,7 @@
 #pragma once
 
 #include "int_types.hpp"
+#include "move.hpp"
 
 namespace tl
 {
