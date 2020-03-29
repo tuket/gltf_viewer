@@ -33,6 +33,7 @@ set(HEADERS
 	algorithms/copy.hpp
 	algorithms/fill.hpp
 	rect.hpp
+	bitset.hpp
 )
 PREPEND(HEADERS "${INC}/tl" ${HEADERS})
 

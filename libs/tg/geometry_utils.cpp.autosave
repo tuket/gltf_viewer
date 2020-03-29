@@ -226,7 +226,10 @@ float intersectionArea_square_quad(const tl::rect& s, tl::CSpan<vec2> q, int myT
         for(i8 j = 0; j < 4; j++)
         for(i8 k = 0; k < 2; k++)
         {
-            if((intersectMtx[i][j] >> 4*k) & 0xFF)
+            const u8 arrayInd = intersectMtx[i][j] >> 4*k;
+            if(arrayInd != 0xFF) {
+                curPoint = 8 + 8*i + 2*j + k;
+            }
         }
     }();
 
