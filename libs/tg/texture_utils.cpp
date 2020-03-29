@@ -72,6 +72,8 @@ vec3 sampleImgQuad(CImg3f img, tl::CSpan<vec2> q)
     for(int y = y0; y < y1; y++)
     for(int x = x0; x < x1; x++)
     {
+        if(x == 196 && y == 82)
+            printf("ewfsdfsd\n");
         const float area = intersectionArea_square_quad(tl::rect(x, y, x+1, y+1), q, x, y);
         avg += area * img(x, y);
     }
@@ -146,8 +148,10 @@ void cylinderMapToCubeMap(CubeImgView3f cube, CImg3f cylindricMap)
                 texCoords[i].x *= cylindricMap.width();
                 texCoords[i].y = cylindricMap.height() * 0.5f * (texCoords[i].y + 1);
             }
-            if(calcPointSideWrtLine(texCoords[0], texCoords[1], texCoords[2]) > 0) // make sure the quad is in counter-clock-wise order
-                tl::swap(texCoords[1], texCoords[2]);
+            if(calcPointSideWrtLine(texCoords[0], texCoords[1], texCoords[2]) > 0) {
+                // make sure the quad is in counter-clock-wise order
+                tl::swap(texCoords[1], texCoords[3]);
+            }
             cube[eFace](x, y) = sampleImgQuad(cylindricMap, texCoords);
         }
     }
