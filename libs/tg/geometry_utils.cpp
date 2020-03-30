@@ -167,7 +167,7 @@ float intersectionArea_square_quad(const tl::rect& s, tl::CSpan<vec2> q, int myT
         if(e < 4)
             return sp[(e+1) % 4];
         else
-            return q[(e-4+1) % 4];
+            return q[(e+1) % 4];
     };
     auto calcNextEdge = [](int e) {
         if(e < 4)
@@ -185,6 +185,14 @@ float intersectionArea_square_quad(const tl::rect& s, tl::CSpan<vec2> q, int myT
         isPointInsideQuad(sp[2], q),
         isPointInsideQuad(sp[3], q)
     };
+    if(pInside & (u8)0b1111) { // square inside quad
+        const float w = s.pMax.x - s.pMin.x;
+        return w*w;
+    }
+    if(pInside & (u8)0b11110000) { // quad inside square
+        return triangleArea(q[0], q[1], q[2]) + triangleArea(q[2], q[3], q[0]);
+    }
+
     u8 intersectMtx[4][4];
     vec2 intersectPoints[8];
     u8 numIntersectPoints = 0;
@@ -203,32 +211,67 @@ float intersectionArea_square_quad(const tl::rect& s, tl::CSpan<vec2> q, int myT
             numIntersectPoints += n;
         }
     }
-    if(pInside & (u8)0b1111) { // square inside quad
-        const float w = s.pMax.x - s.pMin.x;
-        return w*w;
-    }
-    if(pInside & (u8)0b11110000) { // quad inside square
-        return triangleArea(q[0], q[1], q[2]) + triangleArea(q[2], q[3], q[0]);
-    }
 
-    tl::FVector<vec2, 8> poly; // here we compute the intersection polygon
-    u8 curEdge = 0xFF;
-    u8 curPoint = 0xFF;
-    [&](){
+    auto getPointPos = [&](u8 pointInd) {
+        if(pointInd < 4)
+            return sp[pointInd];
+        else if(pointInd < 8)
+            return q[pointInd-4];
+        else {
+            const u8 ijk = pointInd-8;
+            const u8 k = ijk & 1;
+            const u8 j = (ijk & 0b1110) >> 1;
+            const u8 i = ijk >> 4;
+            const u8 arrayInd = k ? intersectMtx[i][j] & 0b1111 : intersectMtx[i][j] >> 4;
+            assert(arrayInd != 0xF);
+            return intersectPoints[arrayInd];
+        }
+    };
+
+    u8 startEdge = 0xFF;
+    u8 startPoint = 0xFF;
+    [&]() { // compute startEdge and startPoint
         for(i8 i = 0; i < 8; i++)
         if(pInside[i])
         {
-            curPoint = i;
-            curEdge = i;
+            startPoint = i;
+            startEdge = i;
             return;
         }
         for(i8 i = 0; i < 4; i++)
-        for(i8 j = 0; j < 4; j++)
-        for(i8 k = 0; k < 2; k++)
         {
-            if((intersectMtx[i][j] >> 4*k) & 0xFF)
+            const vec2 iVec = edgePos1(i) - edgePos1(i);
+            const vec2 iVec_ = {iVec.y, -iVec.x}; // turn 90 degrees clock-wise
+            for(i8 j = 0; j < 4; j++)
+            {
+                const u8 arrayInd0 = intersectMtx[i][j] | 0b1111;
+                const u8 arrayInd1 = intersectMtx[i][j] >> 4;
+
+                if(arrayInd0 != 0xFF) {
+                    if(arrayInd1 != 0xFF) {
+                        startPoint = arrayInd0;
+                        startEdge = i;
+                    }
+                    else {
+                        startPoint = 8 + 8*i + 2*j;
+                        const vec2 jVec = edgePos1(j) - edgePos0(0);
+                        startEdge = dot(iVec_, jVec) > 0 ? i : j;
+                    }
+                }
+            }
         }
     }();
+
+    if(startPoint == 0xFF)
+        return 0;
+
+    tl::FVector<vec2, 8> poly; // here we compute the intersection polygon
+    u8 curEdge = startEdge;
+    u8 curPoint = startPoint;
+    do {
+        poly.push_back(getPointPos(curPoint));
+
+    } while(curPoint != startPoint);
 
     const float area = convexPolyArea(poly);
     return area;

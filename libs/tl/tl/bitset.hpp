@@ -19,7 +19,7 @@ public:
         assert(l.size() <= sizeof(x)*8);
         x = 0;
         for(UIntType i = 0; i < l.size(); i++)
-            if(l[i])
+            if(l.begin()[i])
                 x |= ((UIntType)1 << i);
     }
     bool get(UIntType i)const { return x & ((UIntType)1 << i); }
