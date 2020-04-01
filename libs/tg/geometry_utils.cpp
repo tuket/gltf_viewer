@@ -169,7 +169,7 @@ float intersectionArea_square_quad(const tl::rect& s, tl::CSpan<vec2> q, int myT
         else
             return q[(e+1) % 4];
     };
-    auto calcNextEdge = [](int e) {
+    auto calcNextEdge = [](u8 e) -> u8 {
         if(e < 4)
             return (e+1) % 4;
         else
@@ -185,12 +185,12 @@ float intersectionArea_square_quad(const tl::rect& s, tl::CSpan<vec2> q, int myT
         isPointInsideQuad(sp[2], q),
         isPointInsideQuad(sp[3], q)
     };
-    if(pInside & (u8)0b1111) { // square inside quad
+    if((pInside & (u8)0b1111) == 0b1111) { // square inside quad
         const float w = s.pMax.x - s.pMin.x;
         return w*w;
     }
-    if(pInside & (u8)0b11110000) { // quad inside square
-        return triangleArea(q[0], q[1], q[2]) + triangleArea(q[2], q[3], q[0]);
+    if((pInside & (u8)0b11110000) == 0b11110000) { // quad inside square
+        return triangleArea(q[0], q[1], q[2]) + triangleArea(q[0], q[2], q[3]);
     }
 
     u8 intersectMtx[4][4];
@@ -205,7 +205,7 @@ float intersectionArea_square_quad(const tl::rect& s, tl::CSpan<vec2> q, int myT
         if(n > 0)
         {
             if(n == 1)
-                intersectMtx[i][j] = numIntersectPoints;
+                intersectMtx[i][j] = 0b11110000 | numIntersectPoints;
             else //if(n == 2)
                 intersectMtx[i][j] = numIntersectPoints | (u8)((numIntersectPoints+1) << 4);
             numIntersectPoints += n;
@@ -234,8 +234,8 @@ float intersectionArea_square_quad(const tl::rect& s, tl::CSpan<vec2> q, int myT
         for(i8 i = 0; i < 8; i++)
         if(pInside[i])
         {
-            startPoint = i;
-            startEdge = i;
+            startPoint = (4+i) % 4;
+            startEdge = (4+i) % 4;
             return;
         }
         for(i8 i = 0; i < 4; i++)
@@ -248,15 +248,15 @@ float intersectionArea_square_quad(const tl::rect& s, tl::CSpan<vec2> q, int myT
                 const u8 arrayInd1 = intersectMtx[i][j] >> 4;
 
                 if(arrayInd0 != 0xFF) {
+                    startPoint = 8 + 8*i + 2*j;
                     if(arrayInd1 != 0xFF) {
-                        startPoint = arrayInd0;
                         startEdge = i;
                     }
                     else {
-                        startPoint = 8 + 8*i + 2*j;
                         const vec2 jVec = edgePos1(j) - edgePos0(0);
                         startEdge = dot(iVec_, jVec) > 0 ? i : j;
                     }
+                    return;
                 }
             }
         }
@@ -271,6 +271,47 @@ float intersectionArea_square_quad(const tl::rect& s, tl::CSpan<vec2> q, int myT
     do {
         poly.push_back(getPointPos(curPoint));
 
+        // advance to next point in the poly
+        u8 curIntersectEdges[2];
+        u8 numCurIntersectEdges = 0;
+        for(u8 i = 0; i < 4; i++) {
+            if(intersectMtx[curEdge][i] != 0xFF) {
+                curIntersectEdges[numCurIntersectEdges] = intersectMtx[curEdge][i];
+                numCurIntersectEdges++;
+            }
+        }
+        u8 curIntersectPoints[2];
+        u8 numCurIntersectPoints = 0;
+        if(numCurIntersectEdges == 1) {
+            const u8 intersectPointInfo = intersectMtx[curEdge][curIntersectEdges[0]];
+            curIntersectPoints[0] = intersectPointInfo & 0b1111;
+            curIntersectPoints[1] = intersectPointInfo >> 4;
+            numCurIntersectPoints = curIntersectPoints[1] == 0xF ? 1 : 2;
+        }
+        else {
+            curIntersectPoints[0] = intersectMtx[curEdge][curIntersectEdges[0]] & 0b1111;
+            curIntersectPoints[1] = intersectMtx[curEdge][curIntersectEdges[1]] & 0b1111;
+            numCurIntersectPoints = 2;
+        }
+        if(numCurIntersectPoints == 1) {
+            curPoint = curIntersectPoints[0];
+            curEdge = curIntersectEdges[0];
+        }
+        else if(numIntersectPoints == 2) {
+            if(numCurIntersectEdges)
+                return 10;
+            if(curPoint == curIntersectPoints[0]) {
+                curPoint = curIntersectPoints[1];
+                curEdge = curIntersectEdges[1];
+            }
+            else {
+                curPoint = curIntersectPoints[1];
+            }
+        }
+        else // numCurIntersectPoints == 0
+        {
+            curPoint = curEdge = calcNextEdge(curEdge);
+        }
     } while(curPoint != startPoint);
 
     const float area = convexPolyArea(poly);
