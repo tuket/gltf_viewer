@@ -151,6 +151,8 @@ float convexPolyArea(tl::CSpan<vec2> poly)
 
 float intersectionArea_square_quad(const tl::rect& s, tl::CSpan<vec2> q, int myTraceX, int myTraceY)
 {
+    if(1124073473 == *(uint32_t*)(&q[0].x))
+        printf("balba\n");
     traceX = myTraceX;
     traceY = myTraceY;
     assert(q.size() == 4);
@@ -234,8 +236,8 @@ float intersectionArea_square_quad(const tl::rect& s, tl::CSpan<vec2> q, int myT
         for(i8 i = 0; i < 8; i++)
         if(pInside[i])
         {
-            startPoint = (4+i) % 4;
-            startEdge = (4+i) % 4;
+            startPoint = (4+i) % 8;
+            startEdge = (4+i) % 8;
             return;
         }
         for(i8 i = 0; i < 4; i++)
@@ -275,9 +277,18 @@ float intersectionArea_square_quad(const tl::rect& s, tl::CSpan<vec2> q, int myT
         u8 curIntersectEdges[2];
         u8 numCurIntersectEdges = 0;
         for(u8 i = 0; i < 4; i++) {
-            if(intersectMtx[curEdge][i] != 0xFF) {
-                curIntersectEdges[numCurIntersectEdges] = intersectMtx[curEdge][i];
-                numCurIntersectEdges++;
+            if(curEdge < 4) {
+                if(intersectMtx[curEdge][i] != 0xFF) {
+                    curIntersectEdges[numCurIntersectEdges] = intersectMtx[curEdge][i];
+                    numCurIntersectEdges++;
+                }
+            }
+            else { // curEdge >= 4
+                if(intersectMtx[i][curEdge-4] != 0xFF) {
+                    // TODO
+                    curIntersectEdges[numCurIntersectEdges] = intersectMtx[i][curEdge-4];
+                    numCurIntersectEdges++;
+                }
             }
         }
         u8 curIntersectPoints[2];
