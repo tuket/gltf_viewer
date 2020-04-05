@@ -34,7 +34,7 @@ namespace tg
 
 u8 segmentsIntersect(vec2 *out, vec2 a0, vec2 a1, vec2 b0, vec2 b1)
 {
-    constexpr float EPSILON = 0.0001f;
+    constexpr float EPSILON = 1e-15f;
     const float alphaDenominator =
         (a0.x - a1.x) * (b1.y - b0.y) -
         (a0.y - a1.y) * (b1.x - b0.x);
@@ -48,7 +48,7 @@ u8 segmentsIntersect(vec2 *out, vec2 a0, vec2 a1, vec2 b0, vec2 b1)
         (b1.x - a1.x) * (a0.y - a1.y) -
         (b1.y - a1.y) * (a0.x - a1.x);
 
-    if(alphaDenominator * alphaDenominator > EPSILON)
+    if(fabsf(alphaDenominator) > EPSILON)
     {
         // segments are NOT parallel
         const float alpha = alphaNumerator / alphaDenominator;
@@ -64,7 +64,7 @@ u8 segmentsIntersect(vec2 *out, vec2 a0, vec2 a1, vec2 b0, vec2 b1)
     }
     else // segments are parallel
     {
-        if(alphaNumerator * alphaNumerator > EPSILON) // segments don't lie on the same line
+        if(fabsf(alphaNumerator) > EPSILON) // segments don't lie on the same line
             return 0;
         // return -1 if before the segment, 0 if in between, and +1 if after
         auto pointRelPos = [](vec2 p, vec2 seg0, vec2 seg1)
@@ -102,7 +102,7 @@ u8 segmentsIntersect(vec2 *out, vec2 a0, vec2 a1, vec2 b0, vec2 b1)
             return 0;
         }
 
-        if(out[0] == out[0])
+        if(out[0] == out[1])
             return 1;
         else
             return 2;
@@ -151,8 +151,6 @@ float convexPolyArea(tl::CSpan<vec2> poly)
 
 float intersectionArea_square_quad(const tl::rect& s, tl::CSpan<vec2> q, int myTraceX, int myTraceY)
 {
-    if(1124073473 == *(uint32_t*)(&q[0].x))
-        printf("balba\n");
     traceX = myTraceX;
     traceY = myTraceY;
     assert(q.size() == 4);
@@ -195,6 +193,9 @@ float intersectionArea_square_quad(const tl::rect& s, tl::CSpan<vec2> q, int myT
         return triangleArea(q[0], q[1], q[2]) + triangleArea(q[0], q[2], q[3]);
     }
 
+    if(*(u32*)&q[0].x == 1132462080 && *(u32*)&q[0].y == 1117124122)
+        printf("blabla\n");
+
     u8 intersectMtx[4][4];
     vec2 intersectPoints[8];
     u8 numIntersectPoints = 0;
@@ -222,8 +223,8 @@ float intersectionArea_square_quad(const tl::rect& s, tl::CSpan<vec2> q, int myT
         else {
             const u8 ijk = pointInd-8;
             const u8 k = ijk & 1;
-            const u8 j = (ijk & 0b1110) >> 1;
-            const u8 i = ijk >> 4;
+            const u8 j = (ijk & 0b110) >> 1;
+            const u8 i = ijk >> 3;
             const u8 arrayInd = k ? intersectMtx[i][j] & 0b1111 : intersectMtx[i][j] >> 4;
             assert(arrayInd != 0xF);
             return intersectPoints[arrayInd];
@@ -242,7 +243,7 @@ float intersectionArea_square_quad(const tl::rect& s, tl::CSpan<vec2> q, int myT
         }
         for(i8 i = 0; i < 4; i++)
         {
-            const vec2 iVec = edgePos1(i) - edgePos1(i);
+            const vec2 iVec = edgePos1(i) - edgePos0(i);
             const vec2 iVec_ = {iVec.y, -iVec.x}; // turn 90 degrees clock-wise
             for(i8 j = 0; j < 4; j++)
             {
@@ -274,43 +275,35 @@ float intersectionArea_square_quad(const tl::rect& s, tl::CSpan<vec2> q, int myT
         poly.push_back(getPointPos(curPoint));
 
         // advance to next point in the poly
+        u8 curIntersectPoints[2];
+        u8 numCurIntersectPoints = 0;
         u8 curIntersectEdges[2];
         u8 numCurIntersectEdges = 0;
         for(u8 i = 0; i < 4; i++) {
-            if(curEdge < 4) {
-                if(intersectMtx[curEdge][i] != 0xFF) {
-                    curIntersectEdges[numCurIntersectEdges] = intersectMtx[curEdge][i];
-                    numCurIntersectEdges++;
+            assert(numCurIntersectPoints <= 2);
+            const u8 curEdge_4 = curEdge % 4;
+            const u8 i_8 = curEdge < 4 ? i+4 : i;
+            const u8 iMtx = curEdge < 4 ?
+                        intersectMtx[curEdge_4][i] :
+                        intersectMtx[i][curEdge_4];
+            if(iMtx != 0xFF) {
+                curIntersectPoints[numCurIntersectPoints] = 8 + 8*curEdge_4 + 2*i;
+                numIntersectPoints++;
+                if((iMtx & 0xF0) != 0xF0) {
+                    curIntersectPoints[numCurIntersectPoints] =
+                        curIntersectPoints[numCurIntersectPoints-1] + 1;
+                    numCurIntersectPoints++;
                 }
-            }
-            else { // curEdge >= 4
-                if(intersectMtx[i][curEdge-4] != 0xFF) {
-                    // TODO
-                    curIntersectEdges[numCurIntersectEdges] = intersectMtx[i][curEdge-4];
-                    numCurIntersectEdges++;
-                }
+                curIntersectEdges[numCurIntersectEdges] = i_8;
+                numCurIntersectEdges++;
             }
         }
-        u8 curIntersectPoints[2];
-        u8 numCurIntersectPoints = 0;
-        if(numCurIntersectEdges == 1) {
-            const u8 intersectPointInfo = intersectMtx[curEdge][curIntersectEdges[0]];
-            curIntersectPoints[0] = intersectPointInfo & 0b1111;
-            curIntersectPoints[1] = intersectPointInfo >> 4;
-            numCurIntersectPoints = curIntersectPoints[1] == 0xF ? 1 : 2;
-        }
-        else {
-            curIntersectPoints[0] = intersectMtx[curEdge][curIntersectEdges[0]] & 0b1111;
-            curIntersectPoints[1] = intersectMtx[curEdge][curIntersectEdges[1]] & 0b1111;
-            numCurIntersectPoints = 2;
-        }
+
         if(numCurIntersectPoints == 1) {
             curPoint = curIntersectPoints[0];
             curEdge = curIntersectEdges[0];
         }
-        else if(numIntersectPoints == 2) {
-            if(numCurIntersectEdges)
-                return 10;
+        else if(numCurIntersectPoints == 2) {
             if(curPoint == curIntersectPoints[0]) {
                 curPoint = curIntersectPoints[1];
                 curEdge = curIntersectEdges[1];
