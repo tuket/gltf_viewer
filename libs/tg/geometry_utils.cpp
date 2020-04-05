@@ -64,6 +64,7 @@ u8 segmentsIntersect(vec2 *out, vec2 a0, vec2 a1, vec2 b0, vec2 b1)
     }
     else // segments are parallel
     {
+        return 0;
         if(fabsf(alphaNumerator) > EPSILON) // segments don't lie on the same line
             return 0;
         // return -1 if before the segment, 0 if in between, and +1 if after
@@ -143,7 +144,7 @@ float convexPolyArea(tl::CSpan<vec2> poly)
         return 0;
     const size_t n = poly.size();
     // sum the area for the fan triangles
-    float area = triangleArea(poly[0], poly[n-2], poly[n-1]);
+    float area = 0;
     for(size_t i1 = 1, i2 = 2; i2 < n; i1++, i2++)
         area += triangleArea(poly[0], poly[i1], poly[i2]);
     return area;
@@ -202,16 +203,14 @@ float intersectionArea_square_quad(const tl::rect& s, tl::CSpan<vec2> q, int myT
     for(int i = 0; i < 4; i++)
     for(int j = 0; j < 4; j++)
     {
-        intersectMtx[i][j] = 0xFF;
         const u8 n = segmentsIntersect(&intersectPoints[numIntersectPoints],
             sp[i], sp[(i+1)%4], q[j], q[(j+1)%4]);
-        if(n > 0)
-        {
-            if(n == 1)
-                intersectMtx[i][j] = 0b11110000 | numIntersectPoints;
-            else //if(n == 2)
-                intersectMtx[i][j] = numIntersectPoints | (u8)((numIntersectPoints+1) << 4);
-            numIntersectPoints += n;
+        if(n > 0) {
+            intersectMtx[i][j] = numIntersectPoints;
+            numIntersectPoints++;
+        }
+        else {
+            intersectMtx[i][j] = 0xFF;
         }
     }
 
@@ -221,12 +220,11 @@ float intersectionArea_square_quad(const tl::rect& s, tl::CSpan<vec2> q, int myT
         else if(pointInd < 8)
             return q[pointInd-4];
         else {
-            const u8 ijk = pointInd-8;
-            const u8 k = ijk & 1;
-            const u8 j = (ijk & 0b110) >> 1;
-            const u8 i = ijk >> 3;
-            const u8 arrayInd = k ? intersectMtx[i][j] & 0b1111 : intersectMtx[i][j] >> 4;
-            assert(arrayInd != 0xF);
+            const u8 ij = pointInd-8;
+            const u8 i = ij >> 2;
+            const u8 j = ij & 0b11;
+            const u8 arrayInd = intersectMtx[i][j];
+            assert(arrayInd != 0xFF);
             return intersectPoints[arrayInd];
         }
     };
@@ -247,18 +245,11 @@ float intersectionArea_square_quad(const tl::rect& s, tl::CSpan<vec2> q, int myT
             const vec2 iVec_ = {iVec.y, -iVec.x}; // turn 90 degrees clock-wise
             for(i8 j = 0; j < 4; j++)
             {
-                const u8 arrayInd0 = intersectMtx[i][j] | 0b1111;
-                const u8 arrayInd1 = intersectMtx[i][j] >> 4;
-
-                if(arrayInd0 != 0xFF) {
-                    startPoint = 8 + 8*i + 2*j;
-                    if(arrayInd1 != 0xFF) {
-                        startEdge = i;
-                    }
-                    else {
-                        const vec2 jVec = edgePos1(j) - edgePos0(0);
-                        startEdge = dot(iVec_, jVec) > 0 ? i : j;
-                    }
+                const u8 arrayInd = intersectMtx[i][j];
+                if(arrayInd != 0xFF) {
+                    startPoint = 8 + 4*i + j;
+                    const vec2 jVec = edgePos1(j) - edgePos0(j);
+                    startEdge = dot(iVec_, jVec) > 0 ? i : j;
                     return;
                 }
             }
@@ -272,38 +263,42 @@ float intersectionArea_square_quad(const tl::rect& s, tl::CSpan<vec2> q, int myT
     u8 curEdge = startEdge;
     u8 curPoint = startPoint;
     do {
+        if(poly.size() == 8) {
+            printf("blabla\n");
+        }
         poly.push_back(getPointPos(curPoint));
 
         // advance to next point in the poly
         u8 curIntersectPoints[2];
-        u8 numCurIntersectPoints = 0;
         u8 curIntersectEdges[2];
-        u8 numCurIntersectEdges = 0;
+        u8 numCurIntersects = 0;
         for(u8 i = 0; i < 4; i++) {
-            assert(numCurIntersectPoints <= 2);
-            const u8 curEdge_4 = curEdge % 4;
-            const u8 i_8 = curEdge < 4 ? i+4 : i;
-            const u8 iMtx = curEdge < 4 ?
-                        intersectMtx[curEdge_4][i] :
-                        intersectMtx[i][curEdge_4];
-            if(iMtx != 0xFF) {
-                curIntersectPoints[numCurIntersectPoints] = 8 + 8*curEdge_4 + 2*i;
-                numIntersectPoints++;
-                if((iMtx & 0xF0) != 0xF0) {
-                    curIntersectPoints[numCurIntersectPoints] =
-                        curIntersectPoints[numCurIntersectPoints-1] + 1;
-                    numCurIntersectPoints++;
+            assert(numCurIntersects <= 2);
+            if(curEdge < 4) {
+                if(intersectMtx[curEdge][i] != 0xFF) {
+                    curIntersectPoints[numCurIntersects] = 8 + 4*curEdge + i;
+                    if(curIntersectPoints[numCurIntersects] != curPoint) {
+                        curIntersectEdges[numCurIntersects] = i + 4;
+                        numCurIntersects++;
+                    }
                 }
-                curIntersectEdges[numCurIntersectEdges] = i_8;
-                numCurIntersectEdges++;
+            }
+            else { // curEdge >= 4
+                if(intersectMtx[i][curEdge-4] != 0xFF) {
+                    curIntersectPoints[numCurIntersects] = 8 + 4*i + curEdge - 4;
+                    if(curIntersectPoints[numCurIntersects] != curPoint) {
+                        curIntersectEdges[numCurIntersects] = i;
+                        numCurIntersects++;
+                    }
+                }
             }
         }
 
-        if(numCurIntersectPoints == 1) {
+        if(numCurIntersects == 1) {
             curPoint = curIntersectPoints[0];
             curEdge = curIntersectEdges[0];
         }
-        else if(numCurIntersectPoints == 2) {
+        else if(numCurIntersects == 2) {
             if(curPoint == curIntersectPoints[0]) {
                 curPoint = curIntersectPoints[1];
                 curEdge = curIntersectEdges[1];
@@ -312,8 +307,7 @@ float intersectionArea_square_quad(const tl::rect& s, tl::CSpan<vec2> q, int myT
                 curPoint = curIntersectPoints[1];
             }
         }
-        else // numCurIntersectPoints == 0
-        {
+        else { // numCurIntersectPoints == 0
             curPoint = curEdge = calcNextEdge(curEdge);
         }
     } while(curPoint != startPoint);
