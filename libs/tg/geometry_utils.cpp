@@ -119,13 +119,19 @@ float intersectionArea_square_quad(const tl::rect& s, tl::CSpan<vec2> q)
     }
 
     tl::FVector<vec2, 8> poly; // here we compute the intersection polygon
-
+    auto insertWhileInside = [&](i8 iq) {
+       iq = (iq + 1) % 4;
+        while(pInside[iq]) {
+            poly.push_back(q[iq]);
+            iq = (iq+1) % 4;
+        }
+    };
     // EDGE 0
     if(pInside[4])
     {
         poly.push_back(sp[0]);
-        i8 intersectedEdge = -1;
-        for(i8 iq = 0; iq < 4; iq++) {
+        i8 iq;
+        for(iq = 0; iq < 4; iq++) {
             const u8 qs = qSlope(iq);
             const vec2 a = q[iq];
             const vec2 b = q[(iq+1)%4];
@@ -137,7 +143,6 @@ float intersectionArea_square_quad(const tl::rect& s, tl::CSpan<vec2> q)
             if(qs == 1) { // '|'
                 if(a.x > s.xMin && a.x < s.xMax) {
                     poly.push_back({a.x, s.yMin});
-                    intersectedEdge = iq;
                     break;
                 }
             } else if(qs == 3 || qs == 4) { // '/' || '\'
@@ -147,22 +152,18 @@ float intersectionArea_square_quad(const tl::rect& s, tl::CSpan<vec2> q)
                 p.x = glm::mix(a.x, b.x, alpha);
                 if(p.x > s.xMin && p.x < s.xMax) {
                     poly.push_back(p);
-                    intersectedEdge = iq;
                     break;
                 }
             }
         }
-        if(intersectedEdge != -1) {
-            i8 iq = (intersectedEdge + 1) % 4;
-            while(pInside[iq]) {
-                poly.push_back(q[iq]);
-                iq = (iq+1) % 4;
-            }
+        if(iq != 4) {
+            insertWhileInside(iq);
         }
     }
     else // if(!pInside[4])
     {
         vec2 intersecPoints[2];
+        i8 intersecEdges[2];
         i8 numInter = 0;
         for(i8 iq = 0; iq < 4 && numInter < 2; iq++) {
             const vec2 a = q[iq];
@@ -179,6 +180,7 @@ float intersectionArea_square_quad(const tl::rect& s, tl::CSpan<vec2> q)
                     p.x = glm::mix(a.x, b.x, alpha);
                     if(p.x > s.xMin && p.x < s.xMax) {
                         intersecPoints[numInter] = p;
+                        intersecEdges[numInter] = iq;
                         numInter++;
                     }
                 }
@@ -186,21 +188,24 @@ float intersectionArea_square_quad(const tl::rect& s, tl::CSpan<vec2> q)
         }
         if(numInter == 1) {
             poly.push_back(intersecPoints[0]);
-        } else { // numInter == 2
+        }
+        else if(numInter == 2) {
             if(intersecPoints[0].x > intersecPoints[1].x) {
                 tl::swap(intersecPoints[0], intersecPoints[1]);
+                tl::swap(intersecEdges[0], intersecEdges[1]);
             }
             poly.push_back(intersecPoints[0]);
             poly.push_back(intersecPoints[1]);
+            insertWhileInside(intersecEdges[1]);
         }
     }
 
     // EDGE 1
     if(pInside[5])
     {
-        poly.push_back({s.xMax, s.yMin});
-        i8 intersectedEdge = -1;
-        for(i8 iq = 0; iq < 4; iq++) {
+        poly.push_back(sp[1]);
+        i8 iq;
+        for(iq = 0; iq < 4; iq++) {
             const u8 qs = qSlope(iq);
             const vec2 a = q[iq];
             const vec2 b = q[(iq+1)%4];
@@ -212,7 +217,6 @@ float intersectionArea_square_quad(const tl::rect& s, tl::CSpan<vec2> q)
             if(qs == 2) { // '-'
                 if(a.y > s.yMin && a.y < s.yMax) {
                     poly.push_back({s.xMax, a.y});
-                    intersectedEdge = iq;
                     break;
                 }
             }
@@ -221,26 +225,22 @@ float intersectionArea_square_quad(const tl::rect& s, tl::CSpan<vec2> q)
                 p.x = s.xMax;
                 const float alpha = (p.x - a.x) / (b.x - a.x);
                 p.y = glm::mix(a.y, b.y, alpha);
-                if(p.y > s.yMax && p.y < s.xMax) {
+                if(p.y > s.yMin && p.y < s.yMax) {
                     poly.push_back(p);
-                    intersectedEdge = iq;
                     break;
                 }
             }
         }
-        if(intersectedEdge != -1) {
-            i8 iq = (intersectedEdge+1) % 4;
-            while(pInside[iq]) {
-                poly.push_back(q[iq]);
-                iq = (iq+1) % 4;
-            }
+        if(iq != 4) { // intersection found
+            insertWhileInside(iq);
         }
     }
     else //!pInside[5]
     {
         vec2 intersecPoints[2];
+        i8 intersecEdges[2];
         i8 numInter = 0;
-        for(i8 iq = 0; iq < 4; iq++) {
+        for(i8 iq = 0; iq < 4 && numInter < 2; iq++) {
             const vec2 a = q[iq];
             const vec2 b = q[(iq+1)%4];
             const u8 abSlope = qSlope(iq);
@@ -252,9 +252,10 @@ float intersectionArea_square_quad(const tl::rect& s, tl::CSpan<vec2> q)
                     vec2 p;
                     p.x = s.xMax;
                     const float alpha = (p.x - a.x) / (b.x - a.x);
-                    p.y = glm::mix(a.y, a.x, alpha);
+                    p.y = glm::mix(a.y, b.y, alpha);
                     if(p.y > s.yMin && p.y < s.yMax) {
                         intersecPoints[numInter] = p;
+                        intersecEdges[numInter] = iq;
                         numInter++;
                     }
                 }
@@ -266,18 +267,20 @@ float intersectionArea_square_quad(const tl::rect& s, tl::CSpan<vec2> q)
         else if(numInter == 2) {
             if(intersecPoints[0].y > intersecPoints[1].y) {
                 tl::swap(intersecPoints[0], intersecPoints[1]);
+                tl::swap(intersecEdges[0], intersecEdges[1]);
             }
             poly.push_back(intersecPoints[0]);
             poly.push_back(intersecPoints[1]);
+            insertWhileInside(intersecEdges[1]);
         }
     }
 
     // EDGE 2
     if(pInside[6])
     {
-        poly.push_back(q[2]);
-        i8 intersectedEdge = -1;
-        for(i8 iq = 0; iq < 4; iq++)
+        poly.push_back(sp[2]);
+        i8 iq;
+        for(iq = 0; iq < 4; iq++)
         {
             const u8 qs = qSlope(iq);
             const vec2 a = q[iq];
@@ -290,7 +293,6 @@ float intersectionArea_square_quad(const tl::rect& s, tl::CSpan<vec2> q)
             if(qs == 1) { // '|'
                 if(a.x > s.xMin || a.x < s.xMax) {
                     poly.push_back({a.x, s.yMin});
-                    intersectedEdge = iq;
                     break;
                 }
             }
@@ -299,26 +301,22 @@ float intersectionArea_square_quad(const tl::rect& s, tl::CSpan<vec2> q)
                 p.y = s.yMax;
                 const float alpha = (p.y - a.y) / (b.y - a.y);
                 p.x = glm::mix(a.x, b.x, alpha);
-                if(p.x > s.xMin && p.y < s.xMax) {
+                if(p.x > s.xMin && p.x < s.xMax) {
                     poly.push_back(p);
-                    intersectedEdge = iq;
                     break;
                 }
             }
-            if(intersectedEdge != -1) {
-                i8 iq = (intersectedEdge + 1) % 4;
-                while(pInside[iq]) {
-                    poly.push_back(q[iq]);
-                    iq = (iq + 1) % 4;
-                }
+            if(iq != 4) {
+                insertWhileInside(iq);
             }
         }
     }
     else // !pInside[6]
     {
         vec2 intersecPoints[2];
+        i8 intersecEdges[2];
         i8 numInter = 0;
-        for(i8 iq = 0; iq < 4; iq++) {
+        for(i8 iq = 0; iq < 4 && numInter < 2; iq++) {
             const vec2 a = q[iq];
             const vec2 b = q[(iq+1)%4];
             const u8 abSlope = qSlope(iq);
@@ -334,6 +332,7 @@ float intersectionArea_square_quad(const tl::rect& s, tl::CSpan<vec2> q)
                 p.x = glm::mix(a.x, b.x, alpha);
                 if(p.x > s.xMin && p.x < s.xMax) {
                     intersecPoints[numInter] = p;
+                    intersecEdges[numInter] = iq;
                     numInter++;
                 }
             }
@@ -344,18 +343,20 @@ float intersectionArea_square_quad(const tl::rect& s, tl::CSpan<vec2> q)
         else if(numInter == 2) {
             if(intersecPoints[0].x < intersecPoints[1].x) {
                 tl::swap(intersecPoints[0], intersecPoints[1]);
+                tl::swap(intersecEdges[0], intersecEdges[1]);
             }
             poly.push_back(intersecPoints[0]);
             poly.push_back(intersecPoints[1]);
+            insertWhileInside(intersecEdges[1]);
         }
     }
 
     // EDGE 3
     if(pInside[7])
     {
-        poly.push_back(q[3]);
-        i8 intersectedEdge = -1;
-        for(i8 iq = 0; iq < 4; iq++) {
+        poly.push_back(sp[3]);
+        i8 iq;
+        for(iq = 0; iq < 4; iq++) {
             const u8 qs = qSlope(iq);
             const vec2 a = q[iq];
             const vec2 b = q[(iq+1)%4];
@@ -367,35 +368,30 @@ float intersectionArea_square_quad(const tl::rect& s, tl::CSpan<vec2> q)
             if(qs == 2) { // '-'
                 if(a.y > s.yMin && a.y < s.yMax) {
                     poly.push_back({s.xMin, a.y});
-                    intersectedEdge = iq;
                     break;
                 }
             }
             else if(qs == 3 || qs == 4) { // '/' || '\'
                 vec2 p;
                 p.x = s.xMin;
-                const float alpha = (p.x - a.x) / (b.x - b.y);
+                const float alpha = (p.x - a.x) / (b.x - a.x);
                 p.y = glm::mix(a.y, b.y, alpha);
                 if(p.y > s.yMin && p.y < s.yMax) {
                     poly.push_back(p);
-                    intersectedEdge = iq;
                     break;
                 }
             }
         }
-        if(intersectedEdge != 1) {
-            i8 iq = (intersectedEdge + 1) % 4;
-            while(pInside[iq]) {
-                poly.push_back(q[iq]);
-                iq = (iq + 1) % 4;
-            }
+        if(iq != 4) {
+            insertWhileInside(iq);
         }
     }
     else // !pInside[7]
     {
         vec2 intersecPoints[2];
+        i8 intersecEdges[2];
         i8 numInter = 0;
-        for(i8 iq = 0; iq < 4; iq++) {
+        for(i8 iq = 0; iq < 4 && numInter < 2; iq++) {
             const vec2 a = q[iq];
             const vec2 b = q[(iq+1)%4];
             const u8 qs = qSlope(iq);
@@ -411,6 +407,7 @@ float intersectionArea_square_quad(const tl::rect& s, tl::CSpan<vec2> q)
                 p.y = glm::mix(a.y, b.y, alpha);
                 if(p.y > s.yMin && p.y < s.yMax) {
                     intersecPoints[numInter] = p;
+                    intersecEdges[numInter] = iq;
                     numInter++;
                 }
             }
@@ -421,13 +418,36 @@ float intersectionArea_square_quad(const tl::rect& s, tl::CSpan<vec2> q)
         else if(numInter == 2) {
             if(intersecPoints[0].y < intersecPoints[1].y) {
                 tl::swap(intersecPoints[0], intersecPoints[1]);
+                tl::swap(intersecEdges[0], intersecEdges[1]);
             }
             poly.push_back(intersecPoints[0]);
             poly.push_back(intersecPoints[1]);
+            insertWhileInside(intersecEdges[1]);
         }
     }
 
     const float area = convexPolyArea(poly);
+    if(false) // test agains brute force
+    {
+        const float approxArea = [&]()
+        {
+            const int n = 10;
+            int count = 0;
+            for(int iy = 0; iy < n; iy++)
+            for(int ix = 0; ix < n; ix++)
+            {
+                const float y = s.yMin + (float)iy / n;
+                const float x = s.xMin + (float)ix / n;
+                if(isPointInsideQuad({x, y}, q))
+                    count++;
+            }
+            const float area = (float)count / (n*n);
+            return area;
+        }();
+        if(fabsf(area - approxArea) > 0.3f) {
+            printf("fail!\n");
+        }
+    }
     return area;
 }
 
