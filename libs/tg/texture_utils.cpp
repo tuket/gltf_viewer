@@ -72,9 +72,9 @@ vec3 sampleImgQuad(CImg3f img, tl::CSpan<vec2> q)
     for(int y = y0; y < y1; y++)
     for(int x = x0; x < x1; x++)
     {
-        const float area = intersectionArea_square_quad(tl::rect(x, y, x+1, y+1), q, x, y);
+        const float area = intersectionArea_square_quad(tl::rect(x, y, x+1, y+1), q);
         //assert(area >= 0 && area <= 1.1);
-        if(area > 1.01)
+        if(area > 1.001)
             return {1, 0, 0};
         if(area < 0.0)
             return {0, 0, 1};

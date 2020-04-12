@@ -3,7 +3,7 @@
 #include <tl/str.hpp>
 #include <tl/fmt.hpp>
 
-bool test_segmentIntersect();
+//bool test_segmentIntersect();
 bool test_cylinderMapToCubeMap();
 
 struct TestInfo {
@@ -12,7 +12,7 @@ struct TestInfo {
 };
 
 static TestInfo tests[] = {
-    {"segmentIntersect", test_segmentIntersect},
+//    {"segmentIntersect", test_segmentIntersect},
     {"cylinderMapToCubeMap", test_cylinderMapToCubeMap}
 };
 

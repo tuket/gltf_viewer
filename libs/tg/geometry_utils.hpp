@@ -20,7 +20,7 @@ float convexPolyArea(tl::CSpan<glm::vec2> poly);
 
 /* Computes the area of the intersection between a asquare and a quad
  * The points of the quad must be given in counter-clock-wise order */
-float intersectionArea_square_quad(const tl::rect& s, tl::CSpan<glm::vec2> q, int myTraceX, int myTraceY);
+float intersectionArea_square_quad(const tl::rect& s, tl::CSpan<glm::vec2> q);
 
 /* Given directed line defined by two points (s0, s1) and a point(a),
  * returns

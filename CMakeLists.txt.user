@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE QtCreatorProject>
-<!-- Written by QtCreator 4.11.2, 2020-04-04T13:38:01. -->
+<!-- Written by QtCreator 4.11.2, 2020-04-09T23:42:44. -->
 <qtcreator>
  <data>
   <variable>EnvironmentId</variable>
@@ -691,7 +691,7 @@
     <value type="QString" key="ProjectExplorer.ProjectConfiguration.DisplayName">tg_tests</value>
     <value type="QString" key="ProjectExplorer.ProjectConfiguration.Id">CMakeProjectManager.CMakeRunConfiguration.tg_tests</value>
     <value type="QString" key="ProjectExplorer.RunConfiguration.BuildKey">tg_tests</value>
-    <value type="QString" key="RunConfiguration.Arguments">1</value>
+    <value type="QString" key="RunConfiguration.Arguments">cylinderMapToCubeMap</value>
     <value type="bool" key="RunConfiguration.Arguments.multi">false</value>
     <value type="QString" key="RunConfiguration.OverrideDebuggerStartup"></value>
     <value type="bool" key="RunConfiguration.UseCppDebugger">false</value>

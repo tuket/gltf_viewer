@@ -35,4 +35,18 @@ static constexpr u64 nextPowerOf2(u64 x) noexcept
 template <typename T>
 static constexpr T pow2(T a) { return a * a; }
 
+template <typename T>
+static i8 sign(T x)
+{
+    return x < 0 ? -1 :
+           x > 0 ? +1 : 0;
+}
+
+template <typename T>
+static i8 relSign(T reference, T x) {
+    return
+        x < reference ? -1 :
+        x > reference ? +1 : 0;
+}
+
 }

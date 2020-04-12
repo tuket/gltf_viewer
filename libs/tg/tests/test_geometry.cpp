@@ -24,7 +24,7 @@ bool approxEqual(vec2 a, vec2 b)
     return tl::pow2(a.x - b.x) < EPS && tl::pow2(a.y - b.y) < EPS;
 };
 
-bool test_segmentIntersect()
+/*bool test_segmentIntersect()
 {
     struct Input { vec2 a0, a1, b0, b1; };
     struct Output { int n; vec2 p[2]; };
@@ -77,4 +77,4 @@ bool test_segmentIntersect()
         tl::println("All tests passed");
     }
     return allOkay;
-}
+}*/

@@ -10,13 +10,7 @@
 using glm::vec2;
 
 #include <tl/fmt.hpp>
-static int traceX, traceY;
-template <typename... Args>
-void trace(const Args&... args)
-{
-    if(traceX == 128 && traceY == 107)
-        tl::print(args...);
-}
+
 namespace tl
 {
 static void toStringBufferT(FmtBuffer& buffer, glm::vec2 v)
@@ -31,84 +25,6 @@ static void toStringBufferT(FmtBuffer& buffer, glm::vec2 v)
 
 namespace tg
 {
-
-u8 segmentsIntersect(vec2 *out, vec2 a0, vec2 a1, vec2 b0, vec2 b1)
-{
-    constexpr float EPSILON = 1e-15f;
-    const float alphaDenominator =
-        (a0.x - a1.x) * (b1.y - b0.y) -
-        (a0.y - a1.y) * (b1.x - b0.x);
-    const float alphaNumerator =
-        (b1.x - a1.x) * (b1.y - b0.y) -
-        (b1.y - a1.y) * (b1.x - b0.x);
-    const float betaDenominator =
-        (a0.y - a1.y) * (b1.x - b0.x) -
-        (a0.x - a1.x) * (b1.y - b0.y);
-    const float betaNumerator =
-        (b1.x - a1.x) * (a0.y - a1.y) -
-        (b1.y - a1.y) * (a0.x - a1.x);
-
-    if(fabsf(alphaDenominator) > EPSILON)
-    {
-        // segments are NOT parallel
-        const float alpha = alphaNumerator / alphaDenominator;
-        if(alpha < 0 || alpha > 1)
-            return 0;
-
-        const float beta = betaNumerator / betaDenominator;
-        if(beta < 0 || beta > 1)
-            return 0;
-
-        out[0] = mix(a1, a0, alpha);
-        return 1;
-    }
-    else // segments are parallel
-    {
-        return 0;
-        if(fabsf(alphaNumerator) > EPSILON) // segments don't lie on the same line
-            return 0;
-        // return -1 if before the segment, 0 if in between, and +1 if after
-        auto pointRelPos = [](vec2 p, vec2 seg0, vec2 seg1)
-        {
-            if(dot(seg1-seg0, p-seg0) < 0)
-                return -1;
-            if(glm::distance2(seg0, p) > glm::distance2(seg0, seg1))
-                return +1;
-            return 0;
-        };
-        const int relPosB0 = pointRelPos(b0, a0, a1);
-        const int relPosB1 = pointRelPos(b1, a0, a1);
-        if(relPosB0 == -1)
-        {
-            if(relPosB1 == -1)
-                return 0;
-            else {
-                out[0] = a0;
-                if(relPosB1 == 0)
-                    out[1] = b1;
-                else
-                    out[1] = a1;
-            }
-        }
-        else if(relPosB0 == 0)
-        {
-            out[0] = b0;
-            if(relPosB1 == 0)
-                out[1] = b1;
-            else
-                out[1] = a1;
-        }
-        else // relPosB0 == 1
-        {
-            return 0;
-        }
-
-        if(out[0] == out[1])
-            return 1;
-        else
-            return 2;
-    }
-}
 
 // points in a quad must be in CCW order
 bool isPointInsideQuad(glm::vec2 p, tl::CSpan<glm::vec2> q)
@@ -147,34 +63,18 @@ float convexPolyArea(tl::CSpan<vec2> poly)
     float area = 0;
     for(size_t i1 = 1, i2 = 2; i2 < n; i1++, i2++)
         area += triangleArea(poly[0], poly[i1], poly[i2]);
+    if(area > 1.2)
+        printf("blabla\n");
     return area;
 }
 
-float intersectionArea_square_quad(const tl::rect& s, tl::CSpan<vec2> q, int myTraceX, int myTraceY)
+float intersectionArea_square_quad(const tl::rect& s, tl::CSpan<vec2> q)
 {
-    traceX = myTraceX;
-    traceY = myTraceY;
-    assert(q.size() == 4);
     const vec2 sp[4] = {
         s.pMin,
         {s.pMax.x, s.pMin.y},
         s.pMax,
         {s.pMin.x, s.pMax.y}
-    };
-    auto edgePos0 = [&](int e) {
-        return e < 4 ? sp[e] : q[e-4];
-    };
-    auto edgePos1 = [&](int e) {
-        if(e < 4)
-            return sp[(e+1) % 4];
-        else
-            return q[(e+1) % 4];
-    };
-    auto calcNextEdge = [](u8 e) -> u8 {
-        if(e < 4)
-            return (e+1) % 4;
-        else
-            return 4 + (e-4+1) % 4;
     };
     const tl::Bitset8 pInside = {
         isPointInsideRect(q[0], s),
@@ -186,6 +86,30 @@ float intersectionArea_square_quad(const tl::rect& s, tl::CSpan<vec2> q, int myT
         isPointInsideQuad(sp[2], q),
         isPointInsideQuad(sp[3], q)
     };
+    auto calcSlopeType = [](vec2 a) -> u16 {
+        const i8 x = tl::sign(a.x);
+        const i8 y = tl::sign(a.y);
+        if(x == 0 || y == 0) // '.'
+            return 0;
+        else if(x == 0) // '|'
+            return 1;
+        else if(y == 0) // '-'
+            return 2;
+        else if(x == y) // '/'
+            return 3;
+        else // '\'
+            return 4;
+    };
+    const u16 qSlopeBits = (u16) (
+        calcSlopeType(q[0]) |
+        calcSlopeType(q[1]) << 4 |
+        calcSlopeType(q[2]) << 8 |
+        calcSlopeType(q[3]) << 12 );
+    auto qSlope = [&qSlopeBits](u8 iq) -> u8
+    {
+        return (qSlopeBits >> (4*iq)) & 0xF;
+    };
+
     if((pInside & (u8)0b1111) == 0b1111) { // square inside quad
         const float w = s.pMax.x - s.pMin.x;
         return w*w;
@@ -194,123 +118,314 @@ float intersectionArea_square_quad(const tl::rect& s, tl::CSpan<vec2> q, int myT
         return triangleArea(q[0], q[1], q[2]) + triangleArea(q[0], q[2], q[3]);
     }
 
-    if(*(u32*)&q[0].x == 1132462080 && *(u32*)&q[0].y == 1117124122)
-        printf("blabla\n");
+    tl::FVector<vec2, 8> poly; // here we compute the intersection polygon
 
-    u8 intersectMtx[4][4];
-    vec2 intersectPoints[8];
-    u8 numIntersectPoints = 0;
-    for(int i = 0; i < 4; i++)
-    for(int j = 0; j < 4; j++)
+    // EDGE 0
+    if(pInside[4])
     {
-        const u8 n = segmentsIntersect(&intersectPoints[numIntersectPoints],
-            sp[i], sp[(i+1)%4], q[j], q[(j+1)%4]);
-        if(n > 0) {
-            intersectMtx[i][j] = numIntersectPoints;
-            numIntersectPoints++;
+        poly.push_back(sp[0]);
+        i8 intersectedEdge = -1;
+        for(i8 iq = 0; iq < 4; iq++) {
+            const u8 qs = qSlope(iq);
+            const vec2 a = q[iq];
+            const vec2 b = q[(iq+1)%4];
+            float yMin = a.y,
+                  yMax = b.y;
+            tl::minMax(yMin, yMax);
+            if(s.yMin <= yMin || s.yMin >= yMax)
+                continue;
+            if(qs == 1) { // '|'
+                if(a.x > s.xMin && a.x < s.xMax) {
+                    poly.push_back({a.x, s.yMin});
+                    intersectedEdge = iq;
+                    break;
+                }
+            } else if(qs == 3 || qs == 4) { // '/' || '\'
+                vec2 p;
+                p.y = s.yMin;
+                const float alpha = (p.y - a.y) / (b.y - a.y);
+                p.x = glm::mix(a.x, b.x, alpha);
+                if(p.x > s.xMin && p.x < s.xMax) {
+                    poly.push_back(p);
+                    intersectedEdge = iq;
+                    break;
+                }
+            }
         }
-        else {
-            intersectMtx[i][j] = 0xFF;
+        if(intersectedEdge != -1) {
+            i8 iq = (intersectedEdge + 1) % 4;
+            while(pInside[iq]) {
+                poly.push_back(q[iq]);
+                iq = (iq+1) % 4;
+            }
+        }
+    }
+    else // if(!pInside[4])
+    {
+        vec2 intersecPoints[2];
+        i8 numInter = 0;
+        for(i8 iq = 0; iq < 4 && numInter < 2; iq++) {
+            const vec2 a = q[iq];
+            const vec2 b = q[(iq+1)%4];
+            const u8 abSlope = qSlope(iq);
+            if(abSlope != 0 && abSlope != 2) { // !'.' && '-'
+                float minY = a.y,
+                      maxY = b.y;
+                tl::minMax(minY, maxY);
+                if(s.yMin > minY && s.yMin < maxY) {
+                    vec2 p;
+                    p.y = s.yMin;
+                    const float alpha = (p.y - a.y) / (b.y - a.y);
+                    p.x = glm::mix(a.x, b.x, alpha);
+                    if(p.x > s.xMin && p.x < s.xMax) {
+                        intersecPoints[numInter] = p;
+                        numInter++;
+                    }
+                }
+            }
+        }
+        if(numInter == 1) {
+            poly.push_back(intersecPoints[0]);
+        } else { // numInter == 2
+            if(intersecPoints[0].x > intersecPoints[1].x) {
+                tl::swap(intersecPoints[0], intersecPoints[1]);
+            }
+            poly.push_back(intersecPoints[0]);
+            poly.push_back(intersecPoints[1]);
         }
     }
 
-    auto getPointPos = [&](u8 pointInd) {
-        if(pointInd < 4)
-            return sp[pointInd];
-        else if(pointInd < 8)
-            return q[pointInd-4];
-        else {
-            const u8 ij = pointInd-8;
-            const u8 i = ij >> 2;
-            const u8 j = ij & 0b11;
-            const u8 arrayInd = intersectMtx[i][j];
-            assert(arrayInd != 0xFF);
-            return intersectPoints[arrayInd];
-        }
-    };
-
-    u8 startEdge = 0xFF;
-    u8 startPoint = 0xFF;
-    [&]() { // compute startEdge and startPoint
-        for(i8 i = 0; i < 8; i++)
-        if(pInside[i])
-        {
-            startPoint = (4+i) % 8;
-            startEdge = (4+i) % 8;
-            return;
-        }
-        for(i8 i = 0; i < 4; i++)
-        {
-            const vec2 iVec = edgePos1(i) - edgePos0(i);
-            const vec2 iVec_ = {iVec.y, -iVec.x}; // turn 90 degrees clock-wise
-            for(i8 j = 0; j < 4; j++)
-            {
-                const u8 arrayInd = intersectMtx[i][j];
-                if(arrayInd != 0xFF) {
-                    startPoint = 8 + 4*i + j;
-                    const vec2 jVec = edgePos1(j) - edgePos0(j);
-                    startEdge = dot(iVec_, jVec) > 0 ? i : j;
-                    return;
+    // EDGE 1
+    if(pInside[5])
+    {
+        poly.push_back({s.xMax, s.yMin});
+        i8 intersectedEdge = -1;
+        for(i8 iq = 0; iq < 4; iq++) {
+            const u8 qs = qSlope(iq);
+            const vec2 a = q[iq];
+            const vec2 b = q[(iq+1)%4];
+            float xMin = a.x,
+                  xMax = b.x;
+            tl::minMax(xMin, xMax);
+            if(s.xMax <= xMin || s.xMax >= xMax)
+                continue;
+            if(qs == 2) { // '-'
+                if(a.y > s.yMin && a.y < s.yMax) {
+                    poly.push_back({s.xMax, a.y});
+                    intersectedEdge = iq;
+                    break;
+                }
+            }
+            else if(qs == 3 || qs == 4) { // '/' || '\'
+                vec2 p;
+                p.x = s.xMax;
+                const float alpha = (p.x - a.x) / (b.x - a.x);
+                p.y = glm::mix(a.y, b.y, alpha);
+                if(p.y > s.yMax && p.y < s.xMax) {
+                    poly.push_back(p);
+                    intersectedEdge = iq;
+                    break;
                 }
             }
         }
-    }();
-
-    if(startPoint == 0xFF)
-        return 0;
-
-    tl::FVector<vec2, 8> poly; // here we compute the intersection polygon
-    u8 curEdge = startEdge;
-    u8 curPoint = startPoint;
-    do {
-        if(poly.size() == 8) {
-            printf("blabla\n");
-        }
-        poly.push_back(getPointPos(curPoint));
-
-        // advance to next point in the poly
-        u8 curIntersectPoints[2];
-        u8 curIntersectEdges[2];
-        u8 numCurIntersects = 0;
-        for(u8 i = 0; i < 4; i++) {
-            assert(numCurIntersects <= 2);
-            if(curEdge < 4) {
-                if(intersectMtx[curEdge][i] != 0xFF) {
-                    curIntersectPoints[numCurIntersects] = 8 + 4*curEdge + i;
-                    if(curIntersectPoints[numCurIntersects] != curPoint) {
-                        curIntersectEdges[numCurIntersects] = i + 4;
-                        numCurIntersects++;
-                    }
-                }
+        if(intersectedEdge != -1) {
+            i8 iq = (intersectedEdge+1) % 4;
+            while(pInside[iq]) {
+                poly.push_back(q[iq]);
+                iq = (iq+1) % 4;
             }
-            else { // curEdge >= 4
-                if(intersectMtx[i][curEdge-4] != 0xFF) {
-                    curIntersectPoints[numCurIntersects] = 8 + 4*i + curEdge - 4;
-                    if(curIntersectPoints[numCurIntersects] != curPoint) {
-                        curIntersectEdges[numCurIntersects] = i;
-                        numCurIntersects++;
+        }
+    }
+    else //!pInside[5]
+    {
+        vec2 intersecPoints[2];
+        i8 numInter = 0;
+        for(i8 iq = 0; iq < 4; iq++) {
+            const vec2 a = q[iq];
+            const vec2 b = q[(iq+1)%4];
+            const u8 abSlope = qSlope(iq);
+            if(abSlope != 0 && abSlope != 1) { // !'.' && !'|'
+                float minX = a.x,
+                      maxX = b.x;
+                tl::minMax(minX, maxX);
+                if(s.xMax > minX && s.xMax < maxX) {
+                    vec2 p;
+                    p.x = s.xMax;
+                    const float alpha = (p.x - a.x) / (b.x - a.x);
+                    p.y = glm::mix(a.y, a.x, alpha);
+                    if(p.y > s.yMin && p.y < s.yMax) {
+                        intersecPoints[numInter] = p;
+                        numInter++;
                     }
                 }
             }
         }
+        if(numInter == 1) {
+            poly.push_back(intersecPoints[0]);
+        }
+        else if(numInter == 2) {
+            if(intersecPoints[0].y > intersecPoints[1].y) {
+                tl::swap(intersecPoints[0], intersecPoints[1]);
+            }
+            poly.push_back(intersecPoints[0]);
+            poly.push_back(intersecPoints[1]);
+        }
+    }
 
-        if(numCurIntersects == 1) {
-            curPoint = curIntersectPoints[0];
-            curEdge = curIntersectEdges[0];
-        }
-        else if(numCurIntersects == 2) {
-            if(curPoint == curIntersectPoints[0]) {
-                curPoint = curIntersectPoints[1];
-                curEdge = curIntersectEdges[1];
+    // EDGE 2
+    if(pInside[6])
+    {
+        poly.push_back(q[2]);
+        i8 intersectedEdge = -1;
+        for(i8 iq = 0; iq < 4; iq++)
+        {
+            const u8 qs = qSlope(iq);
+            const vec2 a = q[iq];
+            const vec2 b = q[(iq+1)%4];
+            float yMin = a.y,
+                  yMax = b.y;
+            tl::minMax(yMin, yMax);
+            if(s.yMax <= yMin || s.yMax >= yMax)
+                continue;
+            if(qs == 1) { // '|'
+                if(a.x > s.xMin || a.x < s.xMax) {
+                    poly.push_back({a.x, s.yMin});
+                    intersectedEdge = iq;
+                    break;
+                }
             }
-            else {
-                curPoint = curIntersectPoints[1];
+            else if(qs == 2 || qs == 3) { // '/' || '\'
+                vec2 p;
+                p.y = s.yMax;
+                const float alpha = (p.y - a.y) / (b.y - a.y);
+                p.x = glm::mix(a.x, b.x, alpha);
+                if(p.x > s.xMin && p.y < s.xMax) {
+                    poly.push_back(p);
+                    intersectedEdge = iq;
+                    break;
+                }
+            }
+            if(intersectedEdge != -1) {
+                i8 iq = (intersectedEdge + 1) % 4;
+                while(pInside[iq]) {
+                    poly.push_back(q[iq]);
+                    iq = (iq + 1) % 4;
+                }
             }
         }
-        else { // numCurIntersectPoints == 0
-            curPoint = curEdge = calcNextEdge(curEdge);
+    }
+    else // !pInside[6]
+    {
+        vec2 intersecPoints[2];
+        i8 numInter = 0;
+        for(i8 iq = 0; iq < 4; iq++) {
+            const vec2 a = q[iq];
+            const vec2 b = q[(iq+1)%4];
+            const u8 abSlope = qSlope(iq);
+            if(abSlope == 0 || abSlope == 2) // '.' || '-'
+                continue;
+            float yMin = a.y,
+                  yMax = b.y;
+            tl::minMax(yMin, yMax);
+            if(s.yMax > yMin && s.yMax < yMax) {
+                vec2 p;
+                p.y = s.yMax;
+                const float alpha = (p.y - a.y) / (b.y - a.y);
+                p.x = glm::mix(a.x, b.x, alpha);
+                if(p.x > s.xMin && p.x < s.xMax) {
+                    intersecPoints[numInter] = p;
+                    numInter++;
+                }
+            }
         }
-    } while(curPoint != startPoint);
+        if(numInter == 1) {
+            poly.push_back(intersecPoints[0]);
+        }
+        else if(numInter == 2) {
+            if(intersecPoints[0].x < intersecPoints[1].x) {
+                tl::swap(intersecPoints[0], intersecPoints[1]);
+            }
+            poly.push_back(intersecPoints[0]);
+            poly.push_back(intersecPoints[1]);
+        }
+    }
+
+    // EDGE 3
+    if(pInside[7])
+    {
+        poly.push_back(q[3]);
+        i8 intersectedEdge = -1;
+        for(i8 iq = 0; iq < 4; iq++) {
+            const u8 qs = qSlope(iq);
+            const vec2 a = q[iq];
+            const vec2 b = q[(iq+1)%4];
+            float xMin = a.x,
+                  xMax = b.x;
+            tl::minMax(xMin, xMax);
+            if(s.xMin <= xMin || s.xMin >= xMax)
+                continue;
+            if(qs == 2) { // '-'
+                if(a.y > s.yMin && a.y < s.yMax) {
+                    poly.push_back({s.xMin, a.y});
+                    intersectedEdge = iq;
+                    break;
+                }
+            }
+            else if(qs == 3 || qs == 4) { // '/' || '\'
+                vec2 p;
+                p.x = s.xMin;
+                const float alpha = (p.x - a.x) / (b.x - b.y);
+                p.y = glm::mix(a.y, b.y, alpha);
+                if(p.y > s.yMin && p.y < s.yMax) {
+                    poly.push_back(p);
+                    intersectedEdge = iq;
+                    break;
+                }
+            }
+        }
+        if(intersectedEdge != 1) {
+            i8 iq = (intersectedEdge + 1) % 4;
+            while(pInside[iq]) {
+                poly.push_back(q[iq]);
+                iq = (iq + 1) % 4;
+            }
+        }
+    }
+    else // !pInside[7]
+    {
+        vec2 intersecPoints[2];
+        i8 numInter = 0;
+        for(i8 iq = 0; iq < 4; iq++) {
+            const vec2 a = q[iq];
+            const vec2 b = q[(iq+1)%4];
+            const u8 qs = qSlope(iq);
+            if(qs == 0 || qs == 1) // '.' || '|'
+                continue;
+            float xMin = a.x,
+                  xMax = b.x;
+            tl::minMax(xMin, xMax);
+            if(s.xMin > xMin && s.xMin < xMax) {
+                vec2 p;
+                p.x = s.xMin;
+                const float alpha = (p.x - a.x) / (b.x - a.x);
+                p.y = glm::mix(a.y, b.y, alpha);
+                if(p.y > s.yMin && p.y < s.yMax) {
+                    intersecPoints[numInter] = p;
+                    numInter++;
+                }
+            }
+        }
+        if(numInter == 1) {
+            poly.push_back(intersecPoints[0]);
+        }
+        else if(numInter == 2) {
+            if(intersecPoints[0].y < intersecPoints[1].y) {
+                tl::swap(intersecPoints[0], intersecPoints[1]);
+            }
+            poly.push_back(intersecPoints[0]);
+            poly.push_back(intersecPoints[1]);
+        }
+    }
 
     const float area = convexPolyArea(poly);
     return area;
