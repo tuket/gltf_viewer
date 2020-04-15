@@ -89,7 +89,7 @@ float intersectionArea_square_quad(const tl::rect& s, tl::CSpan<vec2> q)
     auto calcSlopeType = [](vec2 a) -> u16 {
         const i8 x = tl::sign(a.x);
         const i8 y = tl::sign(a.y);
-        if(x == 0 || y == 0) // '.'
+        if(x == 0 && y == 0) // '.'
             return 0;
         else if(x == 0) // '|'
             return 1;
@@ -101,10 +101,10 @@ float intersectionArea_square_quad(const tl::rect& s, tl::CSpan<vec2> q)
             return 4;
     };
     const u16 qSlopeBits = (u16) (
-        calcSlopeType(q[0]) |
-        calcSlopeType(q[1]) << 4 |
-        calcSlopeType(q[2]) << 8 |
-        calcSlopeType(q[3]) << 12 );
+        calcSlopeType(q[1]-q[0]) |
+        calcSlopeType(q[2]-q[1]) << 4 |
+        calcSlopeType(q[3]-q[2]) << 8 |
+        calcSlopeType(q[0]-q[3]) << 12 );
     auto qSlope = [&qSlopeBits](u8 iq) -> u8
     {
         return (qSlopeBits >> (4*iq)) & 0xF;
@@ -141,7 +141,7 @@ float intersectionArea_square_quad(const tl::rect& s, tl::CSpan<vec2> q)
             if(s.yMin <= yMin || s.yMin >= yMax)
                 continue;
             if(qs == 1) { // '|'
-                if(a.x > s.xMin && a.x < s.xMax) {
+                if(a.x >= s.xMin && a.x <= s.xMax) {
                     poly.push_back({a.x, s.yMin});
                     break;
                 }
@@ -173,15 +173,20 @@ float intersectionArea_square_quad(const tl::rect& s, tl::CSpan<vec2> q)
                 float minY = a.y,
                       maxY = b.y;
                 tl::minMax(minY, maxY);
-                if(s.yMin > minY && s.yMin < maxY) {
-                    vec2 p;
-                    p.y = s.yMin;
-                    const float alpha = (p.y - a.y) / (b.y - a.y);
-                    p.x = glm::mix(a.x, b.x, alpha);
-                    if(p.x > s.xMin && p.x < s.xMax) {
-                        intersecPoints[numInter] = p;
-                        intersecEdges[numInter] = iq;
-                        numInter++;
+                if(s.yMin >= minY && s.yMin <= maxY) {
+                    if(abSlope == 1) {
+
+                    }
+                    else {
+                        vec2 p;
+                        p.y = s.yMin;
+                        const float alpha = (p.y - a.y) / (b.y - a.y);
+                        p.x = glm::mix(a.x, b.x, alpha);
+                        if(p.x > s.xMin && p.x < s.xMax) {
+                            intersecPoints[numInter] = p;
+                            intersecEdges[numInter] = iq;
+                            numInter++;
+                        }
                     }
                 }
             }
@@ -215,7 +220,7 @@ float intersectionArea_square_quad(const tl::rect& s, tl::CSpan<vec2> q)
             if(s.xMax <= xMin || s.xMax >= xMax)
                 continue;
             if(qs == 2) { // '-'
-                if(a.y > s.yMin && a.y < s.yMax) {
+                if(a.y >= s.yMin && a.y <= s.yMax) {
                     poly.push_back({s.xMax, a.y});
                     break;
                 }
@@ -248,7 +253,7 @@ float intersectionArea_square_quad(const tl::rect& s, tl::CSpan<vec2> q)
                 float minX = a.x,
                       maxX = b.x;
                 tl::minMax(minX, maxX);
-                if(s.xMax > minX && s.xMax < maxX) {
+                if(s.xMax >= minX && s.xMax <= maxX) {
                     vec2 p;
                     p.x = s.xMax;
                     const float alpha = (p.x - a.x) / (b.x - a.x);
@@ -291,8 +296,8 @@ float intersectionArea_square_quad(const tl::rect& s, tl::CSpan<vec2> q)
             if(s.yMax <= yMin || s.yMax >= yMax)
                 continue;
             if(qs == 1) { // '|'
-                if(a.x > s.xMin || a.x < s.xMax) {
-                    poly.push_back({a.x, s.yMin});
+                if(a.x >= s.xMin && a.x <= s.xMax) {
+                    poly.push_back({a.x, s.yMax});
                     break;
                 }
             }
@@ -306,9 +311,9 @@ float intersectionArea_square_quad(const tl::rect& s, tl::CSpan<vec2> q)
                     break;
                 }
             }
-            if(iq != 4) {
-                insertWhileInside(iq);
-            }
+        }
+        if(iq != 4) {
+            insertWhileInside(iq);
         }
     }
     else // !pInside[6]
@@ -325,7 +330,7 @@ float intersectionArea_square_quad(const tl::rect& s, tl::CSpan<vec2> q)
             float yMin = a.y,
                   yMax = b.y;
             tl::minMax(yMin, yMax);
-            if(s.yMax > yMin && s.yMax < yMax) {
+            if(s.yMax >= yMin && s.yMax <= yMax) {
                 vec2 p;
                 p.y = s.yMax;
                 const float alpha = (p.y - a.y) / (b.y - a.y);
@@ -366,7 +371,7 @@ float intersectionArea_square_quad(const tl::rect& s, tl::CSpan<vec2> q)
             if(s.xMin <= xMin || s.xMin >= xMax)
                 continue;
             if(qs == 2) { // '-'
-                if(a.y > s.yMin && a.y < s.yMax) {
+                if(a.y >= s.yMin && a.y <= s.yMax) {
                     poly.push_back({s.xMin, a.y});
                     break;
                 }
@@ -400,7 +405,7 @@ float intersectionArea_square_quad(const tl::rect& s, tl::CSpan<vec2> q)
             float xMin = a.x,
                   xMax = b.x;
             tl::minMax(xMin, xMax);
-            if(s.xMin > xMin && s.xMin < xMax) {
+            if(s.xMin >= xMin && s.xMin <= xMax) {
                 vec2 p;
                 p.x = s.xMin;
                 const float alpha = (p.x - a.x) / (b.x - a.x);
@@ -427,7 +432,7 @@ float intersectionArea_square_quad(const tl::rect& s, tl::CSpan<vec2> q)
     }
 
     const float area = convexPolyArea(poly);
-    if(false) // test agains brute force
+    if(true) // test agains brute force
     {
         const float approxArea = [&]()
         {
