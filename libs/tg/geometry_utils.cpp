@@ -174,8 +174,12 @@ float intersectionArea_square_quad(const tl::rect& s, tl::CSpan<vec2> q)
                       maxY = b.y;
                 tl::minMax(minY, maxY);
                 if(s.yMin >= minY && s.yMin <= maxY) {
-                    if(abSlope == 1) {
-
+                    if(abSlope == 1) { // '|'
+                        if(a.x >= s.xMin && a.x <= s.xMax) {
+                            intersecPoints[numInter] = {a.x, s.yMin};
+                            intersecEdges[numInter] = iq;
+                            numInter++;
+                        }
                     }
                     else {
                         vec2 p;
