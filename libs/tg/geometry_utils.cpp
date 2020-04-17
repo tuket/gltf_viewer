@@ -70,55 +70,6 @@ float convexPolyArea(tl::CSpan<vec2> poly)
 
 float intersectionArea_square_quad(const tl::rect& s, tl::CSpan<vec2> q)
 {
-    return 1;
-    const vec2 sp[4] = {
-        s.pMin,
-        {s.pMax.x, s.pMin.y},
-        s.pMax,
-        {s.pMin.x, s.pMax.y}
-    };
-    const tl::Bitset8 pInside = {
-        isPointInsideRect(q[0], s),
-        isPointInsideRect(q[1], s),
-        isPointInsideRect(q[2], s),
-        isPointInsideRect(q[3], s),
-        isPointInsideQuad(sp[0], q),
-        isPointInsideQuad(sp[1], q),
-        isPointInsideQuad(sp[2], q),
-        isPointInsideQuad(sp[3], q)
-    };
-    auto calcSlopeType = [](vec2 a) -> u16 {
-        const i8 x = tl::sign(a.x);
-        const i8 y = tl::sign(a.y);
-        if(x == 0 && y == 0) // '.'
-            return 0;
-        else if(x == 0) // '|'
-            return 1;
-        else if(y == 0) // '-'
-            return 2;
-        else if(x == y) // '/'
-            return 3;
-        else // '\'
-            return 4;
-    };
-    const u16 qSlopeBits = (u16) (
-        calcSlopeType(q[1]-q[0]) |
-        calcSlopeType(q[2]-q[1]) << 4 |
-        calcSlopeType(q[3]-q[2]) << 8 |
-        calcSlopeType(q[0]-q[3]) << 12 );
-    auto qSlope = [&qSlopeBits](u8 iq) -> u8
-    {
-        return (qSlopeBits >> (4*iq)) & 0xF;
-    };
-
-    if((pInside & (u8)0b1111) == 0b1111) { // square inside quad
-        const float w = s.pMax.x - s.pMin.x;
-        return w*w;
-    }
-    if((pInside & (u8)0b11110000) == 0b11110000) { // quad inside square
-        return triangleArea(q[0], q[1], q[2]) + triangleArea(q[0], q[2], q[3]);
-    }
-
     tl::FVector<vec2, 8> poly0; // here we compute the intersection polygon
     tl::FVector<vec2, 8> poly1;
 
@@ -200,7 +151,7 @@ float intersectionArea_square_quad(const tl::rect& s, tl::CSpan<vec2> q)
     }
 
     const float area = convexPolyArea(poly1);
-    if(true) // test agains brute force
+    if(false) // test agains brute force
     {
         const float approxArea = [&]()
         {

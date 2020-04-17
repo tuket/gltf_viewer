@@ -81,7 +81,7 @@ vec3 sampleImgQuad(CImg3f img, tl::CSpan<vec2> q)
         assert(x < img.width() && y < img.height());
         avg += area * img(x, y);
     }
-    avg /= (x1-x0) * (y1-y0);
+    avg /= convexPolyArea(q);
     return avg;
 }
 
