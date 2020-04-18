@@ -11,18 +11,6 @@ using glm::vec2;
 
 #include <tl/fmt.hpp>
 
-namespace tl
-{
-static void toStringBufferT(FmtBuffer& buffer, glm::vec2 v)
-{
-    buffer.writeAndAdvance("{");
-    toStringBufferT(buffer, v.x);
-    buffer.writeAndAdvance(", ");
-    toStringBufferT(buffer, v.y);
-    buffer.writeAndAdvance("}");
-}
-}
-
 namespace tg
 {
 
@@ -63,8 +51,6 @@ float convexPolyArea(tl::CSpan<vec2> poly)
     float area = 0;
     for(size_t i1 = 1, i2 = 2; i2 < n; i1++, i2++)
         area += triangleArea(poly[0], poly[i1], poly[i2]);
-    if(area > 1.2)
-        printf("blabla\n");
     return area;
 }
 

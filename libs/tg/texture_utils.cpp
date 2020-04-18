@@ -73,11 +73,7 @@ vec3 sampleImgQuad(CImg3f img, tl::CSpan<vec2> q)
     for(int x = x0; x < x1; x++)
     {
         const float area = intersectionArea_square_quad(tl::rect(x, y, x+1, y+1), q);
-        //assert(area >= 0 && area <= 1.1);
-        if(area > 1.001)
-            return {1, 0, 0};
-        if(area < 0.0)
-            return {0, 0, 1};
+        assert(area >= 0.f && area < 1.001f);
         assert(y < img.height());
         avg += area * img(x % img.width(), y);
     }
@@ -153,25 +149,21 @@ void cylinderMapToCubeMap(CubeImgView3f cube, CImg3f cylindricMap)
                 texCoords[i].y = cylindricMap.height() * 0.5f * (texCoords[i].y + 1);
             }
             // here we make sure that that we don't "wrap around the sphere"
-            if(texCoords[0].x - texCoords[1].x > 0.5f*cylindricMap.width()) {
+            // this happens when one ray of the pixel has and azimuth close to 0 of 360
+            // and the other ray crosses the 360º fontier, that would produce a quad that cover most of the image
+            if(texCoords[0].x - texCoords[1].x > 0.5f*cylindricMap.width() ||
+               texCoords[3].x - texCoords[2].x > 0.5f*cylindricMap.width())
+            {
                 texCoords[1].x += cylindricMap.width();
                 texCoords[2].x += cylindricMap.width();
             }
-            else if(texCoords[1].x - texCoords[0].x > 0.5f*cylindricMap.width()) {
+            else if(texCoords[1].x - texCoords[0].x > 0.5f*cylindricMap.width() ||
+                    texCoords[2].x - texCoords[3].x > 0.5f*cylindricMap.width())
+            {
                 texCoords[0].x += cylindricMap.width();
                 texCoords[3].x += cylindricMap.width();
             }
-            else if(texCoords[2].x - texCoords[3].x > 0.5f*cylindricMap.width()) {
-                texCoords[3].x += cylindricMap.width();
-                texCoords[0].x += cylindricMap.width();
-            }
-            else if(texCoords[3].x - texCoords[2].x > 0.5f*cylindricMap.width()) {
-                texCoords[2].x += cylindricMap.width();
-                texCoords[1].x += cylindricMap.width();
-            }
-            if(convexPolyArea(texCoords)> 5) {
-                printf("blabla\n");
-            }
+
             cube[eFace](x, y) = sampleImgQuad(cylindricMap, texCoords);
         }
     }

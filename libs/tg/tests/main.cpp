@@ -12,7 +12,6 @@ struct TestInfo {
 };
 
 static TestInfo tests[] = {
-//    {"segmentIntersect", test_segmentIntersect},
     {"cylinderMapToCubeMap", test_cylinderMapToCubeMap}
 };
 
