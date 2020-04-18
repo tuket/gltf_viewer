@@ -78,8 +78,8 @@ vec3 sampleImgQuad(CImg3f img, tl::CSpan<vec2> q)
             return {1, 0, 0};
         if(area < 0.0)
             return {0, 0, 1};
-        assert(x < img.width() && y < img.height());
-        avg += area * img(x, y);
+        assert(y < img.height());
+        avg += area * img(x % img.width(), y);
     }
     avg /= convexPolyArea(q);
     return avg;
@@ -148,13 +148,29 @@ void cylinderMapToCubeMap(CubeImgView3f cube, CImg3f cylindricMap)
                 // project onto cylinder
                 float angle = atan2f(r.x, r.z) + PI;
                 texCoords[i] = {angle / PI2, r.y};
-                assert(texCoords[i].x >= 0 && texCoords[i].x <= 1);
+                assert(texCoords[i].x >= 0);
                 texCoords[i].x *= cylindricMap.width();
                 texCoords[i].y = cylindricMap.height() * 0.5f * (texCoords[i].y + 1);
             }
-            if(calcPointSideWrtLine(texCoords[0], texCoords[1], texCoords[2]) > 0) {
-                // make sure the quad is in counter-clock-wise order
-                tl::swap(texCoords[1], texCoords[3]);
+            // here we make sure that that we don't "wrap around the sphere"
+            if(texCoords[0].x - texCoords[1].x > 0.5f*cylindricMap.width()) {
+                texCoords[1].x += cylindricMap.width();
+                texCoords[2].x += cylindricMap.width();
+            }
+            else if(texCoords[1].x - texCoords[0].x > 0.5f*cylindricMap.width()) {
+                texCoords[0].x += cylindricMap.width();
+                texCoords[3].x += cylindricMap.width();
+            }
+            else if(texCoords[2].x - texCoords[3].x > 0.5f*cylindricMap.width()) {
+                texCoords[3].x += cylindricMap.width();
+                texCoords[0].x += cylindricMap.width();
+            }
+            else if(texCoords[3].x - texCoords[2].x > 0.5f*cylindricMap.width()) {
+                texCoords[2].x += cylindricMap.width();
+                texCoords[1].x += cylindricMap.width();
+            }
+            if(convexPolyArea(texCoords)> 5) {
+                printf("blabla\n");
             }
             cube[eFace](x, y) = sampleImgQuad(cylindricMap, texCoords);
         }
