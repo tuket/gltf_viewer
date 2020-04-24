@@ -46,6 +46,7 @@ target_link_libraries(gltf_viewer stb)
 target_link_libraries(gltf_viewer glm)
 target_link_libraries(gltf_viewer cgltf)
 target_link_libraries(gltf_viewer tl)
+target_link_libraries(gltf_viewer tg)
 
 add_library(textool
 	textool/textool.cpp

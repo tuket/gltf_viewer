@@ -4,6 +4,7 @@
 #include <tl/fmt.hpp>
 #include <glad/glad.h>
 #include "utils.hpp"
+#include <tg/shader_utils.hpp>
 
 namespace gpu
 {
@@ -101,27 +102,6 @@ namespace sd
 constexpr u32 infoLogSize = 32*1024;
 static char infoLog[infoLogSize];
 
-static const char* shaderCompileErrs(u32 shader)
-{
-    GLint success;
-    glGetShaderiv(shader, GL_COMPILE_STATUS, &success);
-    if(!success) {
-        glGetShaderInfoLog(shader, infoLogSize, nullptr, infoLog);
-        return infoLog;
-    }
-    return nullptr;
-}
-
-static const char* programLinkErrs(u32 prog)
-{
-    GLint success;
-    glGetProgramiv(prog, GL_LINK_STATUS, &success);
-    if(!success) {
-        glGetProgramInfoLog(prog, infoLogSize, nullptr, infoLog);
-    }
-    return nullptr;
-}
-
 void findAllUnifLocations(ShaderData& data)
 {
    data.unifLocs.modelMat3 = glGetUniformLocation(data.prog, "u_modelMat3");
@@ -136,7 +116,7 @@ bool buildShaders()
     const u32 vertShader = glCreateShader(GL_VERTEX_SHADER);
     uploadShaderSources(vertShader, src::version, src::basicVertShader);
     glCompileShader(vertShader);
-    if(const char* errs = shaderCompileErrs(vertShader)) {
+    if(const char* errs = tg::getShaderCompileErrors(vertShader, infoLog)) {
         tl::printError(errs);
         return false;
     }
@@ -145,7 +125,7 @@ bool buildShaders()
         const u32 fragShader = glCreateShader(GL_FRAGMENT_SHADER);
         uploadShaderSources(fragShader, src::version, src::pbrMetallic);
         glCompileShader(fragShader);
-        if(const char* errs = shaderCompileErrs(fragShader)) {
+        if(const char* errs = tg::getShaderCompileErrors(fragShader, infoLog)) {
             tl::printError(errs);
             return false;
         }
@@ -155,7 +135,7 @@ bool buildShaders()
         glAttachShader(data.prog, vertShader);
         glAttachShader(data.prog, fragShader);
         glLinkProgram(data.prog);
-        if(const char* errs = programLinkErrs(data.prog)) {
+        if(const char* errs = tg::getShaderLinkErrors(data.prog, infoLog)) {
             tl::printError(errs);
             glDeleteShader(fragShader);
             glDeleteProgram(data.prog);
