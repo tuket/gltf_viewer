@@ -9,7 +9,7 @@ char* getShaderCompileErrors(u32 shader, tl::Span<char> buffer)
 {
     i32 ok;
     glGetShaderiv(shader, GL_COMPILE_STATUS, &ok);
-    if(ok) {
+    if(!ok) {
         glGetShaderInfoLog(shader, buffer.size(), nullptr, buffer.begin());
         return buffer.begin();
     }

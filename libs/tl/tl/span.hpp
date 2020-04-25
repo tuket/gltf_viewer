@@ -1,5 +1,6 @@
 #pragma once
 
+#include <assert.h>
 #include "int_types.hpp"
 
 namespace tl

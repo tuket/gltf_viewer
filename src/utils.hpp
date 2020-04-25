@@ -53,12 +53,6 @@ enum class ETexUnit : u8 {
     COUNT
 };
 
-struct OrbitCameraInfo {
-    float heading, pitch; // in radians
-    float distance;
-    glm::mat4 viewMtx()const;
-};
-
 struct CameraProjectionInfo {
     float fovY;
     float nearDist, farDist;

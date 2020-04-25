@@ -5,6 +5,7 @@
 
 //bool test_segmentIntersect();
 bool test_cylinderMapToCubeMap();
+bool test_cubemap();
 
 struct TestInfo {
     CStr name;
@@ -12,7 +13,8 @@ struct TestInfo {
 };
 
 static TestInfo tests[] = {
-    {"cylinderMapToCubeMap", test_cylinderMapToCubeMap}
+    {"cylinderMapToCubeMap", test_cylinderMapToCubeMap},
+    {"cubemap", test_cubemap}
 };
 
 static char scratchStr[1024];

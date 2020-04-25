@@ -16,6 +16,7 @@
 #include <glm/gtc/type_ptr.hpp>
 #include "utils.hpp"
 #include "shaders.hpp"
+#include <tg/cameras.hpp>
 
 using tl::FVector;
 using tl::Span;
@@ -27,11 +28,11 @@ static Str openedFilePath = "";
 static cgltf_data* parsedData = nullptr;
 static cgltf_node* selectedNode = nullptr;
 static i32 selectedCamera = -1; // -1 is the default orbit camera, indices >=0 are indices of the gltf camera
-static OrbitCameraInfo orbitCam;
+static struct OrbitCameraInfo{ float heading, pitch, distance; } orbitCam;
 #ifdef GLM_FORCE_RADIANS
 static const CameraProjectionInfo camProjInfo = {glm::radians(45.f), 0.02f, 500.f};
 #else
-static const CameraProjectionInfo camProjInfo = {glm::radians(45.f), 0.02f, 500.f};
+static const CameraProjectionInfo camProjInfo = {45.f, 0.02f, 500.f};
 
 #endif
 static glm::mat4 camProjMtx;
@@ -350,7 +351,8 @@ static void drawSceneNodeRecursive(const cgltf_node& node, const glm::mat4& pare
     const glm::mat4 modelMat = parentMat * glm::make_mat4(node.matrix);
     if(node.mesh)
     {
-        const glm::mat4 modelViewMat = orbitCam.viewMtx() * modelMat;
+        const glm::mat3 viewMat = tg::calcOrbitCameraMtx(orbitCam.heading, orbitCam.pitch, orbitCam.distance);
+        const glm::mat4 modelViewMat = glm::mat4(viewMat) * modelMat;
         const glm::mat3 modelMat3 = modelMat;
         const glm::mat4 modelViewProj = camProjMtx * modelViewMat;
         CSpan<cgltf_primitive> primitives(node.mesh->primitives, node.mesh->primitives_count);
