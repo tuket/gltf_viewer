@@ -4,6 +4,11 @@ project(gltf_viewer)
 
 set (CMAKE_CXX_STANDARD 17)
 
+if(CMAKE_BUILD_TYPE MATCHES DEBUG)
+	add_definitions(-DGLAD_DEBUG)
+endif(CMAKE_BUILD_TYPE MATCHES DEBUG)
+add_definitions(-DGLM_FORCE_RADIANS)
+
 # this function preppends a path to all files in a list
 FUNCTION(PREPEND var prefix)
 SET(listVar "")

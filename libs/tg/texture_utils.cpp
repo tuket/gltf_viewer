@@ -9,6 +9,7 @@
 #include "shader_utils.hpp"
 #include <tl/basic.hpp>
 #include <tl/basic_math.hpp>
+#include <tl/defer.hpp>
 #include <glad/glad.h>
 #include <string.h>
 
@@ -398,6 +399,71 @@ void cylinderMapToCubeMap(CubeImgView3f cube, CImg3f cylindricMap)
             cube[eFace](x, y) = sampleImgQuad(cylindricMap, texCoords);
         }
     }
+}
+
+u8 getNumChannels(u32 format)
+{
+    switch(format)
+    {
+    case GL_RED:
+        return 1;
+    case GL_RG:
+        return 2;
+    case GL_RGB:
+    case GL_BGR:
+            return 3;
+    case GL_RGBA:
+    case GL_BGRA:
+        return 4;
+    // There are many more but I'm lazy
+    }
+    assert(false);
+    return 0;
+}
+
+u8 getGetPixelSize(u32 format, u32 type)
+{
+    const u32 nc = getNumChannels(format);
+    switch(type)
+    {
+    case GL_UNSIGNED_BYTE:
+    case GL_BYTE:
+        return nc;
+    case GL_UNSIGNED_SHORT:
+    case GL_SHORT:
+    case GL_HALF_FLOAT:
+        return 2*nc;
+    case GL_UNSIGNED_INT:
+    case GL_INT:
+    case GL_FLOAT:
+        return 4*nc;
+    // there are many more but I'm lazy
+    }
+    assert(false);
+    return 1;
+}
+
+void uploadCubemapTexture(u32 mipLevel, u32 w, u32 h, u32 internalFormat, u32 dataFormat, u32 dataType, u8* data)
+{
+    const u8 ps = getGetPixelSize(dataFormat, dataType);
+    const u32 side = w / 4;
+    assert(3*side == h);
+    glPixelStorei(GL_UNPACK_ROW_LENGTH, w);
+    defer(glPixelStorei(GL_UNPACK_ROW_LENGTH, 0));
+    auto upload = [&](GLenum face, u32 offset) {
+        glTexImage2D(face, mipLevel, internalFormat, side, side, 0, dataFormat, dataType, data + offset);
+    };
+    upload(GL_TEXTURE_CUBE_MAP_NEGATIVE_X, ps * w*side);
+    upload(GL_TEXTURE_CUBE_MAP_POSITIVE_X, ps * (w*side + 2*side));
+    upload(GL_TEXTURE_CUBE_MAP_NEGATIVE_Y, ps * (w*2*side + side));
+    upload(GL_TEXTURE_CUBE_MAP_POSITIVE_Y, ps * side);
+    upload(GL_TEXTURE_CUBE_MAP_NEGATIVE_Z, ps * (w*side + 3*side));
+    upload(GL_TEXTURE_CUBE_MAP_POSITIVE_Z, ps * (w*side + side));
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
 }
 
 }

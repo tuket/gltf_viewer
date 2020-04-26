@@ -55,4 +55,6 @@ FilterCubemapError filterCubemap_GGX(const char* inImgFileName,
 
 void cylinderMapToCubeMap(CubeImgView3f cube, CImg3f cylindricMap);
 
+void uploadCubemapTexture(u32 mipLevel, u32 w, u32 h, u32 internalFormat, u32 dataFormat, u32 dataType, u8* data);
+
 }

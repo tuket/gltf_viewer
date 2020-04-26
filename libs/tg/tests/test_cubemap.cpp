@@ -1,17 +1,17 @@
 #include <stdio.h>
 #include <assert.h>
-#define GLM_FORCE_RADIANS
-#define GLAD_DEBUG
 #include <glad/glad.h>
-#include <GL/glu.h>
 #include <GLFW/glfw3.h>
 #include <tg/shader_utils.hpp>
 #include <tg/cameras.hpp>
+#include <tg/geometry_utils.hpp>
+#include <tg/texture_utils.hpp>
 #include <tl/defer.hpp>
 #include <glm/glm.hpp>
 #include <glm/gtc/constants.hpp>
 #include <glm/gtx/transform.hpp>
 #include <stbi.h>
+#include "test_utils.hpp"
 
 constexpr float PI = glm::pi<float>();
 
@@ -51,52 +51,6 @@ void main()
 }
 )GLSL";
 
-static float s_cubeVerts[6*6*(3+2)] = {
-    // x, y, z,  u,     v
-    // LEFT
-    -1, -1, -1,
-    -1, -1, +1,
-    -1, +1, +1,
-    -1, -1, -1,
-    -1, +1, +1,
-    -1, +1, -1,
-    // RIGHT
-    +1, -1, +1,
-    +1, -1, -1,
-    +1, +1, -1,
-    +1, -1, +1,
-    +1, +1, -1,
-    +1, +1, +1,
-    // BOTTOM
-    -1, -1, -1,
-    +1, -1, -1,
-    +1, -1, +1,
-    -1, -1, -1,
-    +1, -1, +1,
-    -1, -1, +1,
-    // TOP
-    -1, +1, +1,
-    +1, +1, +1,
-    +1, +1, -1,
-    -1, +1, +1,
-    +1, +1, -1,
-    -1, +1, -1,
-    // FRONT
-    -1, -1, +1,
-    +1, -1, +1,
-    +1, +1, +1,
-    -1, -1, +1,
-    +1, +1, +1,
-    -1, +1, +1,
-    // BACK
-    +1, -1, -1,
-    -1, -1, -1,
-    -1, +1, -1,
-    +1, -1, -1,
-    -1, +1, -1,
-    +1, +1, -1,
-};
-
 struct UnifLocs {
     i32 modelViewProj;
     i32 cubemap;
@@ -104,120 +58,63 @@ struct UnifLocs {
 
 static char s_buffer[4*1024];
 
-static struct OrbitCameraInfo {
-    float heading, pitch;
-    float distance;
-} orbitCam;
+static OrbitCameraInfo s_orbitCam;
 
-static bool mousePressed = false;
-static double prevMouseX, prevMouseY;
-
-void onMouseClick(GLFWwindow* window, int button, int action, int mods)
+static u32 s_environmentTextureUnit = 1;
+static u32 s_cubeTextureUnit = 0;
+static bool s_seamlessCubemapEnabled = false;
+static bool s_seamlessCubemapEnabledChanged = false;
+void onKey(GLFWwindow* window, int key, int scancode, int action, int mods)
 {
-    if(button == GLFW_MOUSE_BUTTON_1)
-        mousePressed = action == GLFW_PRESS;
-}
-
-void onMouseMove(GLFWwindow* window, double x, double y)
-{
-    if(mousePressed) {
-        const float dx = (float)x - prevMouseX;
-        const float dy = (float)y - prevMouseY;
-        constexpr float speed = PI;
-        int windowW, windowH;
-        glfwGetWindowSize(window, &windowW, &windowH);
-        orbitCam.heading += speed * dx / windowW;
-        while(orbitCam.heading < 0)
-            orbitCam.heading += 2*PI;
-        while(orbitCam.heading > 2*PI)
-            orbitCam.heading -= 2*PI;
-        orbitCam.pitch += speed * dy / windowH;
-        orbitCam.pitch = glm::clamp(orbitCam.pitch, -0.45f*PI, +0.45f*PI);
-    }
-    prevMouseX = (float)x;
-    prevMouseY = (float)y;
-}
-
-void onMouseWheel(GLFWwindow* window, double dx, double dy)
-{
-    const float speed = 1.04f;
-    orbitCam.distance *= pow(speed, (float)dy);
-    orbitCam.distance = glm::max(orbitCam.distance, 0.01f);
-}
-
-void glErrorCallback(const char *name, void *funcptr, int len_args, ...) {
-    GLenum error_code;
-    error_code = glad_glGetError();
-    if (error_code != GL_NO_ERROR) {
-        fprintf(stderr, "ERROR %s in %s\n", gluErrorString(error_code), name);
-        assert(false);
+    if (key == GLFW_KEY_1 && action == GLFW_PRESS)
+        s_environmentTextureUnit ^= 1;
+    if (key == GLFW_KEY_2 && action == GLFW_PRESS)
+        s_cubeTextureUnit ^= 1;
+    if(key == GLFW_KEY_S && action == GLFW_PRESS) {
+        s_seamlessCubemapEnabled = s_seamlessCubemapEnabled != true;
+        s_seamlessCubemapEnabledChanged = true;
+        (s_seamlessCubemapEnabled ? glEnable : glDisable)(GL_TEXTURE_CUBE_MAP_SEAMLESS);
     }
 }
 
 bool test_cubemap()
 {
-    orbitCam.heading = orbitCam.pitch = 0;
-    orbitCam.distance = 4;
-
-    glfwSetErrorCallback(+[](int error, const char* description) {
-        fprintf(stderr, "Glfw Error %d: %s\n", error, description);
-    });
-    if (!glfwInit())
+    window = simpleInitGlfwGL();
+    if(!window)
         return 1;
 
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
-    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-    glfwWindowHint(GLFW_MAXIMIZED, GLFW_TRUE);
+    glfwSetKeyCallback(window, onKey);
 
-    window = glfwCreateWindow(1280, 720, "test", nullptr, nullptr);
-    if (window == nullptr)
-        return 1;
+    s_orbitCam.heading = s_orbitCam.pitch = 0;
+    s_orbitCam.distance = 4;
+    addOrbitCameraBaviour(window, s_orbitCam);
 
-    glfwMakeContextCurrent(window);
-    glfwSwapInterval(0); // Enable vsync
-
-    if (gladLoadGL() == 0) {
-        fprintf(stderr, "Failed to initialize OpenGL loader!\n");
-        return 1;
-    }
-    glad_set_post_callback(glErrorCallback);
-
-    glEnable(GL_DEPTH_TEST);
-    glDepthMask(GL_TRUE);
-
-    glfwSetMouseButtonCallback(window, onMouseClick);
-    glfwSetCursorPosCallback(window, onMouseMove);
-    glfwSetScrollCallback(window, onMouseWheel);
-
-    u32 cubemapTexture;
-    glGenTextures(1, &cubemapTexture);
-    defer(glDeleteTextures(1, &cubemapTexture));
+    u32 cubemapTextures[2];
+    glGenTextures(2, cubemapTextures);
+    defer(glDeleteTextures(2, cubemapTextures));
     glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_CUBE_MAP, cubemapTexture);
+    glBindTexture(GL_TEXTURE_CUBE_MAP, cubemapTextures[0]);
     {
         int w, h, nc;
         u8* data = stbi_load("cubemap_test_rgb.png", &w, &h, &nc, 3);
-        if(data)
-        {
-            defer(stbi_image_free(data));
-            const int side = w / 4;
-            glPixelStorei(GL_UNPACK_ROW_LENGTH, w);
-            defer(glPixelStorei(GL_UNPACK_ROW_LENGTH, 0));
-            auto upload = [&](GLenum face, int offset) {
-                glTexImage2D(face, 0, GL_RGB8, side, side, 0, GL_RGB, GL_UNSIGNED_BYTE, data + offset);
-            };
-            upload(GL_TEXTURE_CUBE_MAP_NEGATIVE_X, 3*w*side);
-            upload(GL_TEXTURE_CUBE_MAP_POSITIVE_X, 3*(w*side + 2*side));
-            upload(GL_TEXTURE_CUBE_MAP_NEGATIVE_Y, 3*(w*2*side + side));
-            upload(GL_TEXTURE_CUBE_MAP_POSITIVE_Y, 3*side);
-            upload(GL_TEXTURE_CUBE_MAP_NEGATIVE_Z, 3*(w*side + 3*side));
-            upload(GL_TEXTURE_CUBE_MAP_POSITIVE_Z, 3*(w*side + side));
-            glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-            glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-            glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-            glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-            glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+        if(data) {
+            tg::uploadCubemapTexture(0, w, h, GL_RGB8, GL_RGB, GL_UNSIGNED_BYTE, data);
+            stbi_image_free(data);
+        }
+        else {
+            printf("error loading img\n");
+            return 1;
+        }
+    }
+
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_CUBE_MAP, cubemapTextures[1]);
+    {
+        int w, h, nc;
+        u8* data = stbi_load("test.png", &w, &h, &nc, 3);
+        if(data) {
+            tg::uploadCubemapTexture(0, w, h, GL_RGB8, GL_RGB, GL_UNSIGNED_BYTE, data);
+            stbi_image_free(data);
         }
         else {
             printf("error loading img\n");
@@ -269,7 +166,7 @@ bool test_cubemap()
     glGenBuffers(1, &vbo);
     defer(glDeleteVertexArrays(1, &vbo));
     glBindBuffer(GL_ARRAY_BUFFER, vbo);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(s_cubeVerts), s_cubeVerts, GL_STATIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(tg::cubeVerts), tg::cubeVerts, GL_STATIC_DRAW);
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, nullptr);
 
@@ -288,14 +185,29 @@ bool test_cubemap()
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         const glm::mat4 modelMtx(1);
-        const glm::mat4 viewMtx = tg::calcOrbitCameraMtx(orbitCam.heading, orbitCam.pitch, orbitCam.distance);
         const glm::mat4 projMtx = glm::perspective(glm::radians(45.f), float(w)/h, 0.1f, 1000.f);
-        //const glm::mat4 projMtx(1);
-        const glm::mat4 modelViewProj = projMtx * glm::mat4(viewMtx) * modelMtx;
-        //const glm::mat4 modelViewProj(1);
-        glUniformMatrix4fv(unifLocs.modelViewProj, 1, GL_FALSE, &modelViewProj[0][0]);
+        const glm::mat4 viewMtx = tg::calcOrbitCameraMtx(s_orbitCam.heading, s_orbitCam.pitch, s_orbitCam.distance);
 
-        glDrawArrays(GL_TRIANGLES, 0, 6*6);
+        glDisable(GL_DEPTH_TEST);
+        glDepthMask(GL_FALSE);
+
+        { // draw environment
+            glm::mat4 viewMtxWithoutTranslation = viewMtx;
+            viewMtxWithoutTranslation[3][0] = viewMtxWithoutTranslation[3][1] = viewMtxWithoutTranslation[3][2] = 0;
+            const glm::mat4 modelViewProj = projMtx * viewMtxWithoutTranslation * modelMtx;
+            glUniformMatrix4fv(unifLocs.modelViewProj, 1, GL_FALSE, &modelViewProj[0][0]);
+            glUniform1i(unifLocs.cubemap, s_environmentTextureUnit);
+            glDrawArrays(GL_TRIANGLES, 0, 6*6);
+        }
+
+        glEnable(GL_DEPTH_TEST);
+        glDepthMask(GL_TRUE);
+        { // draw cube
+            const glm::mat4 modelViewProj = projMtx * viewMtx * modelMtx;
+            glUniformMatrix4fv(unifLocs.modelViewProj, 1, GL_FALSE, &modelViewProj[0][0]);
+            glUniform1i(unifLocs.cubemap, s_cubeTextureUnit);
+            glDrawArrays(GL_TRIANGLES, 0, 6*6);
+        }
 
         glfwSwapBuffers(window);
         glfwWaitEventsTimeout(0.01);

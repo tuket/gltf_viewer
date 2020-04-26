@@ -1,6 +1,5 @@
 #include "scene.hpp"
 
-#define GLM_FORCE_RADIANS
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 #include <imgui.h>
@@ -29,12 +28,8 @@ static cgltf_data* parsedData = nullptr;
 static cgltf_node* selectedNode = nullptr;
 static i32 selectedCamera = -1; // -1 is the default orbit camera, indices >=0 are indices of the gltf camera
 static struct OrbitCameraInfo{ float heading, pitch, distance; } orbitCam;
-#ifdef GLM_FORCE_RADIANS
 static const CameraProjectionInfo camProjInfo = {glm::radians(45.f), 0.02f, 500.f};
-#else
-static const CameraProjectionInfo camProjInfo = {45.f, 0.02f, 500.f};
 
-#endif
 static glm::mat4 camProjMtx;
 
 constexpr size_t MAX_BUFFER_OBJS = 256;

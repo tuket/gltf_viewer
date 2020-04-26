@@ -22,4 +22,7 @@ float intersectionArea_square_quad(const tl::rect& s, tl::CSpan<glm::vec2> q);
  * +1: the point is on the right */
 i8 calcPointSideWrtLine(glm::vec2 s0, glm::vec2 s1, glm::vec2 a);
 
+// vertex positions of a cube center in the origin of corrdinates with side of length 2
+extern const float cubeVerts[6*6*(3+2)];
+
 }

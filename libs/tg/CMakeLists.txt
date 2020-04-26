@@ -24,8 +24,7 @@ add_executable(tg_tests EXCLUDE_FROM_ALL
 	tests/test_geometry.cpp
 	tests/test_cylindermap_to_cubemap.cpp
 	tests/test_cubemap.cpp
-	tests/test_utils.hpp
-	tests/test_utils.cpp
+	tests/test_utils.hpp tests/test_utils.cpp
 )
 target_link_libraries(tg_tests
 	glm
