@@ -220,11 +220,12 @@ void createCubemapMeshGpu(u32& vao, u32& vbo, u32& numVerts)
     glGenVertexArrays(1, &vao);
     glGenBuffers(1, &vbo);
     glBindVertexArray(vao);
+    glBindBuffer(GL_ARRAY_BUFFER, vbo);
     glBufferData(GL_ARRAY_BUFFER, sizeof(s_cubeVerts), s_cubeVerts, GL_STATIC_DRAW);
     glEnableVertexAttribArray(0);
     glEnableVertexAttribArray(1);
-    glVertexAttribPointer(0, 3*sizeof(float), GL_FLOAT, GL_FALSE, 5*sizeof(float), nullptr);
-    glVertexAttribPointer(1, 2*sizeof(float), GL_FLOAT, GL_FALSE, 4*sizeof(float), (void*)(3*sizeof(float)));
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5*sizeof(float), nullptr);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5*sizeof(float), (void*)(3*sizeof(float)));
 }
 
 void filterCubemap_GGX(tl::FVector<Img3f, 16>& outMips,
