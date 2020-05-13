@@ -111,7 +111,7 @@ bool test_cubemap()
     glBindTexture(GL_TEXTURE_CUBE_MAP, cubemapTextures[1]);
     {
         int w, h, nc;
-        u8* data = stbi_load("test.png", &w, &h, &nc, 3);
+        u8* data = stbi_load("test.hdr", &w, &h, &nc, 3);
         if(data) {
             tg::uploadCubemapTexture(0, w, h, GL_RGB8, GL_RGB, GL_UNSIGNED_BYTE, data);
             stbi_image_free(data);

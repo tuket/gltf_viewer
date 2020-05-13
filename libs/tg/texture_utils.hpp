@@ -32,26 +32,25 @@ enum class FilterCubemapError {
 */
 
 
-
 u32 createFilterCubemapVertShader();
-
 
 struct GgxFilterUnifLocs {
     i32 cubemap, numSamples, roughness2;
 };
 u32 createFilterCubemap_ggx_fragShader();
-u32 createFilterCubemap_ggx_shaderProg(u32 vertShader, u32 fragShader);
 GgxFilterUnifLocs getFilterCubamap_ggx_unifLocs(u32 prog);
 
 void createCubemapMeshGpu(u32& vao, u32& vbo, u32& numVerts);
 
 void filterCubemap_GGX(tl::FVector<Img3f, 16>& outMips,
-    ImgView3f inImg, u32 cubemapMeshVao,
-    u32 shaderProg, const GgxFilterUnifLocs& locs);
+    ImgView3f inImg,
+    u32 shaderProg, u32 cubemapMeshVao,
+    const GgxFilterUnifLocs& locs);
 
 FilterCubemapError filterCubemap_GGX(const char* inImgFileName,
     const char* outImgFileNamePrefix, const char* outImgExtension,
-    u32 shaderProg, u32 cubemapMeshVao);
+    u32 shaderProg, u32 cubemapMeshVao,
+    const GgxFilterUnifLocs& locs);
 
 void cylinderMapToCubeMap(CubeImgView3f cube, CImg3f cylindricMap);
 

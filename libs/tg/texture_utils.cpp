@@ -10,6 +10,7 @@
 #include <tl/basic.hpp>
 #include <tl/basic_math.hpp>
 #include <tl/defer.hpp>
+#include <tl/fmt.hpp>
 #include <glad/glad.h>
 #include <string.h>
 
@@ -26,29 +27,59 @@ namespace tg
 
 static const char s_glslVersionSrc[] = "#version 330 core\n\n";
 
+static const char s_glslUtilsSrc[] =
+R"GLSL(
+const float PI = 3.14159265359;
+)GLSL";
+
 static const char s_filterCubemapSrc_vertShad[] =
 R"GLSL(
+layout (location = 0) in vec3 a_pos;
+
+out vec3 a_lobeDir;
+
+void main()
+{
+    a_lobeDir = a_pos;
+    gl_Position = vec4(a_pos, 1.0);
+}
 )GLSL";
 
 static const char s_hammersleyShadSrc[] =
 R"GLSL(
-vec2 hammersley(uint i, uint numSamples)
+vec2 hammersleyVec2(uint i, uint numSamples)
 {
-    b = (i << 16u) | (i >> 16u);
-    b = ((i & 0x55555555u) << 1u) | ((i & 0xAAAAAAAAu) >> 1u);
-    b = ((i & 0x33333333u) << 2u) | ((i & 0xCCCCCCCCu) >> 2u);
-    b = ((i & 0x0F0F0F0Fu) << 4u) | ((i & 0xF0F0F0F0u) >> 4u);
-    b = ((i & 0x00FF00FFu) << 8u) | ((i & 0xFF00FF00u) >> 8u);
-    float radicalInverseVDC = float(i) * 2.3283064365386963e-10;
+    uint b = (i << 16u) | (i >> 16u);
+    b = ((b & 0x55555555u) << 1u) | ((b & 0xAAAAAAAAu) >> 1u);
+    b = ((b & 0x33333333u) << 2u) | ((b & 0xCCCCCCCCu) >> 2u);
+    b = ((b & 0x0F0F0F0Fu) << 4u) | ((b & 0xF0F0F0F0u) >> 4u);
+    b = ((b & 0x00FF00FFu) << 8u) | ((b & 0xFF00FF00u) >> 8u);
+    float radicalInverseVDC = float(b) * 2.3283064365386963e-10;
     return vec2(float(i) / float(numSamples), radicalInverseVDC);
 }
 )GLSL";
 
 static const char s_ggxShadSrc[] =
 R"GLSL(
-vec3 generateDirection(vec3 rayDir, float rough2, uint i)
+vec3 importanceSampleGgx(vec2 seed, float rough2, vec3 N)
 {
+    float phi = 2.0 * PI * seed.x;
+    float cosTheta = sqrt((1.0 - seed.y) / ((1 + rough2*rough2) * seed.y));
+    float sinTheta = sqrt(1.0 - cosTheta*cosTheta);
+    vec3 h;
+    h.x = sinTheta * cos(phi);
+    h.y = sinTheta * sin(phi);
+    h.z = cosTheta;
+    vec3 up = abs(N.y) < 0.99 ? vec3(0, 1, 0) : vec3(1, 0, 0);
+    vec3 tangentX = normalize(cross(up, N));
+    vec3 tangentZ = cross(tangentX, N);
+    return h.x * tangentX + h.y * up + h.z * tangentZ;
+}
 
+vec3 generateDirection(uint sampleInd, uint numSamples)
+{
+    vec2 seed = hammersleyVec2(sampleInd, numSamples);
+    return importanceSampleGgx(seed, u_rough2, normalize(a_lobeDir));
 }
 )GLSL";
 
@@ -56,7 +87,7 @@ static const char s_filterCubemapSrc_vars[] =
 R"GLSL(
 layout(location = 0) out vec4 o_color;
 
-in vec3 a_rayDir;
+in vec3 a_lobeDir;
 
 uniform samplerCube u_cubemap;
 uniform uint u_numSamples;
@@ -68,13 +99,13 @@ R"GLSL(
 void main()
 {
     vec3 outColor = vec3(0.0, 0.0, 0.0);
-    for(uint i = 0; i < u_numSamples; i++)
+    for(uint i = 0u; i < u_numSamples; i++)
     {
-        vec3 dir = generateDirection();
-        outColor += texture(u_cubemap, u_rough2, i);
+        vec3 dir = generateDirection(i, u_numSamples);
+        outColor += texture(u_cubemap, dir).rgb;
     }
-    outColor /= float(numSamples);
-    o_color = outColor;
+    outColor /= float(u_numSamples);
+    o_color = vec4(outColor, 1.0);
 }
 )GLSL";
 
@@ -151,7 +182,9 @@ u32 createFilterCubemap_ggx_fragShader()
 {
     const u32 shad = glCreateShader(GL_FRAGMENT_SHADER);
     const char* srcs[] = {
-        s_glslVersionSrc, s_filterCubemapSrc_vars,
+        s_glslVersionSrc,
+        s_glslUtilsSrc,
+        s_filterCubemapSrc_vars,
         s_hammersleyShadSrc,
         s_ggxShadSrc,
         s_filterCubemapSrc_main
@@ -195,8 +228,9 @@ void createCubemapMeshGpu(u32& vao, u32& vbo, u32& numVerts)
 }
 
 void filterCubemap_GGX(tl::FVector<Img3f, 16>& outMips,
-    ImgView3f inImg, u32 cubemapMeshVao,
-    u32 shaderProg, const GgxFilterUnifLocs& locs)
+    ImgView3f inImg,
+    u32 shaderProg, u32 cubemapMeshVao,
+    const GgxFilterUnifLocs& locs)
 {
     constexpr int numSamples = 16;
     const int sidePixels = tl::min(inImg.width() / 4, inImg.height() / 3);
@@ -257,7 +291,8 @@ void filterCubemap_GGX(tl::FVector<Img3f, 16>& outMips,
 
 FilterCubemapError filterCubemap_GGX(const char* inImgFileName,
     const char* outImgFileNamePrefix, const char* outImgExtension,
-    u32 shaderProg, u32 cubemapMesh)
+    u32 shaderProg, u32 cubemapMeshVao,
+    const tg::GgxFilterUnifLocs& locs)
 {
     Img3f inImg = Img3f::load(inImgFileName);
     if(!inImg.data())
@@ -270,9 +305,23 @@ FilterCubemapError filterCubemap_GGX(const char* inImgFileName,
     if(sidePixelsAcordingToW != sidePixelsAccordingToH) {
         fprintf(stderr, "%s has a weird aspect ratio for a cubemap\n", inImgFileName);
     }
-    const int sidePixels = tl::min(sidePixelsAcordingToW, sidePixelsAccordingToH);
-    CubeImgView3f inCubeView;
-    inCubeView.sidePixels = sidePixels;
+
+    FILE* file = fopen(s_buffer, "w");
+    if(!file)
+        return FilterCubemapError::CANT_OPEN_OUTPUT_FILE;
+    fwrite(inImg.data(), 1, inImg.dataSize(), file);
+    fclose(file);
+
+    tl::FVector<Img3f, 16> outMips;
+    filterCubemap_GGX(outMips, inImg, shaderProg, cubemapMeshVao, locs);
+    for(size_t i = 0; i < outMips.size(); i++) {
+        tl::toStringBuffer(s_buffer, outImgFileNamePrefix, i+1, outImgExtension);
+        FILE* file = fopen(s_buffer, "w");
+        if(!file)
+            return FilterCubemapError::CANT_OPEN_OUTPUT_FILE;
+        fwrite(outMips[i].data(), 1, outMips[i].dataSize(), file);
+        fclose(file);
+    }
 
     return FilterCubemapError::NONE;
 }

@@ -24,7 +24,7 @@ using glm::ivec2;
 
 bool test_cylinderMapToCubeMap()
 {
-    auto img = tg::Img3f::load("autumn.png");
+    auto img = tg::Img3f::load("test.hdr");
     if(!img.data())
         return false;
     const int faceSize = img.height()/2;
@@ -39,6 +39,6 @@ bool test_cylinderMapToCubeMap()
     };
     auto cubeImgView = tg::CubeImgView3f::createFromSingleImg(cubeImg, faceSize, cubeFacesCoords);
     tg::cylinderMapToCubeMap(cubeImgView, img);
-    cubeImg.save("test.png");
+    cubeImg.save("test.hdr");
     return true;
 }

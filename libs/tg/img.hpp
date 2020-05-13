@@ -25,8 +25,10 @@ public:
     int height()const { return _h; }
     int stride()const { return _stride; }
     int strideInBytes()const { return _stride * sizeof(T); }
+    int pixelSize()const { return sizeof(T); }
     T* data() { return _data; }
     const T* data()const { return _data; }
+    int dataSize()const { return _w * _h * pixelSize(); }
 
     ImgView subImg(int x, int y, int w, int h);
     ImgView<const T> subImb(int x, int y, int w, int h)const;

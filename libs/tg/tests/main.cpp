@@ -6,6 +6,7 @@
 //bool test_segmentIntersect();
 bool test_cylinderMapToCubeMap();
 bool test_cubemap();
+bool test_ggxConvolution();
 
 struct TestInfo {
     CStr name;
@@ -14,7 +15,8 @@ struct TestInfo {
 
 static TestInfo tests[] = {
     {"cylinderMapToCubeMap", test_cylinderMapToCubeMap},
-    {"cubemap", test_cubemap}
+    {"cubemap", test_cubemap},
+    {"ggxConvolution", test_ggxConvolution}
 };
 
 static char scratchStr[1024];
