@@ -129,6 +129,7 @@ out vec2 v_tc;
 void main()
 {
     gl_Position = vec4(a_pos, 0, 1);
+    v_tc = 0.5 * (a_pos + 1.0);
 }
 )GLSL";
 
