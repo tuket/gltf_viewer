@@ -45,6 +45,8 @@ class Img : public ImgView<T>
 public:
     Img() : ImgView<T>() {}
 	Img(int w, int h) : ImgView<T>(w, h, (T*)malloc(sizeof(T)*w*h)) {}
+    Img(Img&& o);
+    Img& operator=(Img&& o);
     ~Img() { free(ImgView<T>::_data); }
 
     static Img<T> load(const char* fileName);
@@ -144,6 +146,25 @@ ImgView<const T> CubeImgView<T>::operator[](ECubeImgFace eFace)const {
     assert(i >= 0 && i < 6);
     const Face& face = (&left)[i];
     return ImgView<T>(sidePixels, sidePixels, face.stride, face.data);
+}
+
+
+template <typename T>
+Img<T>::Img(Img&& o)
+    : ImgView<T>(o)
+{
+    o._data = nullptr;
+}
+
+template <typename T>
+Img<T>& Img<T>::operator=(Img&& o)
+{
+    free(Img<T>::_data);
+    Img<T>::_w = o._w;
+    Img<T>::_h = o._h;
+    Img<T>::_stride = o._stride;
+    Img<T>::_data = o._data;
+    o._data = nullptr;
 }
 
 }

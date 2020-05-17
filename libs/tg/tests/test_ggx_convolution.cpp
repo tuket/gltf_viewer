@@ -23,12 +23,12 @@ bool test_ggxConvolution()
         return false;
     }
     const tg::GgxFilterUnifLocs unifLocs = tg::getFilterCubamap_ggx_unifLocs(prog);
-    u32 cubemapVbo, cubemapVao, numVerts;
-    tg::createCubemapMeshGpu(cubemapVao, cubemapVbo, numVerts);
+    u32 vao, vbo, numVerts;
+    tg::createFilterCubemapMeshGpu(vao, vbo, numVerts);
     auto error = tg::filterCubemap_GGX(
-        "autumn_forest_01_4k.hdr",
+        "test.hdr",
         "autumn_ggx_", ".hdr",
-        prog, cubemapVao, unifLocs);
+        prog, vao, unifLocs);
     if(error == tg::FilterCubemapError::CANT_OPEN_INPUT_FILE) {
         tl::println("Error: could not open input file");
     }

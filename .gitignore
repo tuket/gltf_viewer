@@ -1,1 +1,5 @@
 build/
+data/
+*.txt.user
+*.trace
+*.autosave

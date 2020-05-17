@@ -35,13 +35,14 @@ const float PI = 3.14159265359;
 static const char s_filterCubemapSrc_vertShad[] =
 R"GLSL(
 layout (location = 0) in vec3 a_pos;
+layout (location = 1) in vec2 a_tc;
 
-out vec3 a_lobeDir;
+out vec3 v_lobeDir;
 
 void main()
 {
-    a_lobeDir = a_pos;
-    gl_Position = vec4(a_pos, 1.0);
+    v_lobeDir = a_pos;
+    gl_Position = vec4(vec2(2.0, -2.0)*a_tc-vec2(1.0, -1.0), 0.0, 1.0);
 }
 )GLSL";
 
@@ -59,27 +60,52 @@ vec2 hammersleyVec2(uint i, uint numSamples)
 }
 )GLSL";
 
-static const char s_ggxShadSrc[] =
+static const char s_ggxImportanceSampleDSrc[] =
 R"GLSL(
-vec3 importanceSampleGgx(vec2 seed, float rough2, vec3 N)
+vec3 importanceSampleGgxD(vec2 seed, float rough2, vec3 N)
 {
     float phi = 2.0 * PI * seed.x;
-    float cosTheta = sqrt((1.0 - seed.y) / ((1 + rough2*rough2) * seed.y));
+    float cosTheta = sqrt((1.0 - seed.y) / (1 + (rough2*rough2 - 1) * seed.y));
     float sinTheta = sqrt(1.0 - cosTheta*cosTheta);
-    vec3 h;
+    /*vec3 h;
     h.x = sinTheta * cos(phi);
     h.y = sinTheta * sin(phi);
     h.z = cosTheta;
     vec3 up = abs(N.y) < 0.99 ? vec3(0, 1, 0) : vec3(1, 0, 0);
     vec3 tangentX = normalize(cross(up, N));
     vec3 tangentZ = cross(tangentX, N);
-    return h.x * tangentX + h.y * up + h.z * tangentZ;
-}
+    return h.x * tangentX + h.y * up + h.z * tangentZ;*/
 
-vec3 generateDirection(uint sampleInd, uint numSamples)
+    vec3 H;
+    H.x = sinTheta * cos( phi );
+    H.y = sinTheta * sin( phi );
+    H.z = cosTheta;
+    vec3 UpVector = abs(N.z) < 0.999 ? vec3(0,0,1) : vec3(1,0,0);
+    vec3 TangentX = normalize( cross( UpVector , N ) );
+    vec3 TangentY = cross( N, TangentX );
+    // Tangent to world space
+    return TangentX * H.x + TangentY * H.y + N * H.z;
+}
+)GLSL";
+
+static const char s_ggxShadSrc[] =
+R"GLSL(
+void main()
 {
-    vec2 seed = hammersleyVec2(sampleInd, numSamples);
-    return importanceSampleGgx(seed, u_rough2, normalize(a_lobeDir));
+    vec3 N = normalize(v_lobeDir);
+    vec3 outColor = vec3(0.0, 0.0, 0.0);
+    for(uint i = 0u; i < u_numSamples; i++)
+    {
+        vec2 seed = hammersleyVec2(i, u_numSamples);
+        vec3 h = importanceSampleGgxD(seed, u_rough2, N);
+        vec3 l = 2.0 * dot(v_lobeDir, h) * h - v_lobeDir;
+
+        vec3 sampleColor = texture(u_cubemap, l).rgb;
+        float mysteriousFactor = max(0, dot(N, l)); // in the unreal paper, they say this factor improves results, but there is no explanation
+        outColor += sampleColor /* * mysteriousFactor */;
+    }
+    outColor /= float(u_numSamples);
+    o_color = vec4(outColor, 1.0);
 }
 )GLSL";
 
@@ -87,31 +113,71 @@ static const char s_filterCubemapSrc_vars[] =
 R"GLSL(
 layout(location = 0) out vec4 o_color;
 
-in vec3 a_lobeDir;
+in vec3 v_lobeDir;
 
 uniform samplerCube u_cubemap;
 uniform uint u_numSamples;
 uniform float u_rough2; // roughness squared
 )GLSL";
 
-static const char s_filterCubemapSrc_main[] =
+static const char s_simpleScreenQuadVertShadSrc[] =
 R"GLSL(
+layout(location = 0) in vec2 a_pos;
+
+out vec2 v_tc;
+
 void main()
 {
-    vec3 outColor = vec3(0.0, 0.0, 0.0);
-    for(uint i = 0u; i < u_numSamples; i++)
+    gl_Position = vec4(a_pos, 0, 1);
+}
+)GLSL";
+
+static const char s_ggxLutGenerateSrc_fragShad[] =
+R"GLSL(
+uniform uint u_numSamples;
+
+in vec2 v_tc;
+
+float ggxG(float NoV, float rough4)
+{
+    return 2.0 * NoV /
+        ( NoV + sqrt(rough4 + (1 - rough4) * NoV*NoV) );
+}
+
+void main()
+{
+    float NoV = v_tc.x;
+    float rough2 = v_tc.y;
+    vec3 V = vec3(
+        sqrt(1.0 - cosV * cosV),
+        0,
+        NoV);
+    float rough4 = rough2 * rough2;
+    vec2 r = 0;
+    for(uint iSample = 0; iSample < u_numSamples; iSample++)
     {
-        vec3 dir = generateDirection(i, u_numSamples);
-        outColor += texture(u_cubemap, dir).rgb;
+        vec2 seed = hammersleyVec2(i, u_numSamples);
+        vec3 H = importanceSampleGgxD(seed, rough2, V);
+        vec3 L = 2 * dot(V, H) * H - V;
+        float NoL = max(0.0, L.z);
+        float NoH = max(0.0, H.z);
+        float VoH = max(0.0, dot(V, H));
+        if(NoL > 0) {
+            float G = ggxG(V, rough4) * ggxG(L, rough4);
+            float G_vis = G * VoH / (NoH * NoV);
+            float Fc = pow(1.0 - VoH, 5.0);
+            r.x += (1 - Fc) * G_vis;
+            r.y += Fc * G_vis;
+        }
     }
-    outColor /= float(u_numSamples);
-    o_color = vec4(outColor, 1.0);
+
+    r /= float(u_numSamples);
 }
 )GLSL";
 
 static char s_buffer[4*1024];
 
-static float s_cubeVerts[6*6*(3+2)] = {
+static float s_filterCubemapVerts[6*6*(3+2)] = {
     // x, y, z,  u,     v
     // LEFT
     -1, -1, -1,  0,     1/3.f,
@@ -178,6 +244,20 @@ u32 createFilterCubemapVertShader()
     return shad;
 }
 
+void createFilterCubemapMeshGpu(u32& vao, u32& vbo, u32& numVerts)
+{
+    numVerts = tl::size(s_filterCubemapVerts) / 5;
+    glGenVertexArrays(1, &vao);
+    glGenBuffers(1, &vbo);
+    glBindVertexArray(vao);
+    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(s_filterCubemapVerts), s_filterCubemapVerts, GL_STATIC_DRAW);
+    glEnableVertexAttribArray(0);
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5*sizeof(float), nullptr);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5*sizeof(float), (void*)(3*sizeof(float)));
+}
+
 u32 createFilterCubemap_ggx_fragShader()
 {
     const u32 shad = glCreateShader(GL_FRAGMENT_SHADER);
@@ -186,8 +266,8 @@ u32 createFilterCubemap_ggx_fragShader()
         s_glslUtilsSrc,
         s_filterCubemapSrc_vars,
         s_hammersleyShadSrc,
+        s_ggxImportanceSampleDSrc,
         s_ggxShadSrc,
-        s_filterCubemapSrc_main
     };
     constexpr int numSrcs = tl::size(srcs);
     int sizes[numSrcs];
@@ -214,85 +294,94 @@ GgxFilterUnifLocs getFilterCubamap_ggx_unifLocs(u32 prog)
     return locs;
 }
 
-void createCubemapMeshGpu(u32& vao, u32& vbo, u32& numVerts)
-{
-    numVerts = tl::size(s_cubeVerts) / 5;
-    glGenVertexArrays(1, &vao);
-    glGenBuffers(1, &vbo);
-    glBindVertexArray(vao);
-    glBindBuffer(GL_ARRAY_BUFFER, vbo);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(s_cubeVerts), s_cubeVerts, GL_STATIC_DRAW);
-    glEnableVertexAttribArray(0);
-    glEnableVertexAttribArray(1);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5*sizeof(float), nullptr);
-    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5*sizeof(float), (void*)(3*sizeof(float)));
-}
-
 void filterCubemap_GGX(tl::FVector<Img3f, 16>& outMips,
     ImgView3f inImg,
-    u32 shaderProg, u32 cubemapMeshVao,
+    u32 shaderProg,
+    u32 vao,
     const GgxFilterUnifLocs& locs)
 {
-    constexpr int numSamples = 16;
+    constexpr int numSamples = 500;
     const int sidePixels = tl::min(inImg.width() / 4, inImg.height() / 3);
     int numMips = 0;
     for(int px = sidePixels/2; px; px /= 2)
         numMips++;
     assert(numMips <= 16);
+    outMips.resize(numMips);
+
 
     u32 inTex;
     glGenTextures(1, &inTex);
     glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, inTex);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB16F, inImg.width(), inImg.height(), 0, GL_RGB, GL_FLOAT, inImg.data());
+    glBindTexture(GL_TEXTURE_CUBE_MAP, inTex);
+    tg::uploadCubemapTexture(0, 4*sidePixels, 3*sidePixels, GL_RGB16F, GL_RGB, GL_FLOAT, (u8*)inImg.data());
 
-    glBindVertexArray(cubemapMeshVao);
+    glBindVertexArray(vao);
     glUseProgram(shaderProg);
     glUniform1i(locs.cubemap, 0);
-    glUniform1i(locs.numSamples, numSamples);
+    glUniform1ui(locs.numSamples, numSamples);
 
-    glActiveTexture(GL_TEXTURE1);
     u32 framebuffer;
-    u32 textures[16];
+    u32 outTex, rbo;
     glGenFramebuffers(1, &framebuffer);
     glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
-    glGenTextures(numMips, textures);
+    constexpr bool useRenderBufferOut = true;
+    if constexpr(useRenderBufferOut) {
+        glGenRenderbuffers(1, &rbo);
+        glBindRenderbuffer(GL_RENDERBUFFER, rbo);
+        glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, rbo);
+        glRenderbufferStorage(GL_RENDERBUFFER, GL_RGB16F, 4*sidePixels, 3*sidePixels);
+    }
+    else {
+        glActiveTexture(GL_TEXTURE1);
+        glGenTextures(1, &outTex);
+        glBindTexture(GL_TEXTURE_2D, outTex);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB16F, 4*sidePixels, 3*sidePixels, 0, GL_RGB, GL_FLOAT, nullptr);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, outTex, 0);
+    }
+    assert(glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE);
+    glReadBuffer(GL_COLOR_ATTACHMENT0);
+    glClearColor(0,0,0,1);
+
     int mipSidePixels = sidePixels;
     for(int iMip = 0; iMip < numMips; iMip++)
     {
-        const float roughness = float(numMips-iMip) / numMips;
-        const float roughness2 = roughness * roughness;
+        const float roughness = float(iMip+1) / numMips;
+        const float roughness2 = powf(roughness, 3.f);
         glUniform1f(locs.roughness2, roughness2);
-        u32& tex = textures[iMip];
-        glBindTexture(GL_TEXTURE_2D, tex);
         mipSidePixels /= 2;
         const int w = 4 * mipSidePixels;
         const int h = 3 * mipSidePixels;
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB16F, w, h, 0, GL_RGB, GL_FLOAT, nullptr);
-        struct FaceZone {i32 x, y, w, h;};
+        /*struct FaceZone {i32 x, y, w, h;};
         static const FaceZone faceZones[] = {
-            {0*sidePixels, 1*sidePixels, sidePixels, sidePixels}, // LEFT
-            {2*sidePixels, 1*sidePixels, sidePixels, sidePixels}, // RIGHT
-            {1*sidePixels, 2*sidePixels, sidePixels, sidePixels}, // DOWN
-            {1*sidePixels, 0*sidePixels, sidePixels, sidePixels}, // UP
-            {1*sidePixels, 1*sidePixels, sidePixels, sidePixels}, // FRONT
-            {3*sidePixels, 1*sidePixels, sidePixels, sidePixels}, // BACK
-        };
-        for(int i = 0; i < 6; i++)
-        {
-            const FaceZone& fz = faceZones[i];
-            glViewport(fz.x, fz.y, fz.w, fz.h);
-            glScissor(fz.x, fz.y, fz.w, fz.h);
-            const auto eFace = (ECubeImgFace)i;
-        }
+            {0*mipSidePixels, 1*mipSidePixels, mipSidePixels, mipSidePixels}, // LEFT
+            {2*mipSidePixels, 1*mipSidePixels, mipSidePixels, mipSidePixels}, // RIGHT
+            {1*mipSidePixels, 2*mipSidePixels, mipSidePixels, mipSidePixels}, // DOWN
+            {1*mipSidePixels, 0*mipSidePixels, mipSidePixels, mipSidePixels}, // UP
+            {1*mipSidePixels, 1*mipSidePixels, mipSidePixels, mipSidePixels}, // FRONT
+            {3*mipSidePixels, 1*mipSidePixels, mipSidePixels, mipSidePixels}, // BACK
+        };*/
+        //const FaceZone& fz = faceZones[i];
+        glViewport(0, 0, w, h);
+        glScissor(0, 0, w, h);
+        glClear(GL_COLOR_BUFFER_BIT);
+        glDrawArrays(GL_TRIANGLES, 0, 36);
+        outMips[iMip] = Img3f(w, h);
+        glReadPixels(0, 0, w, h, GL_RGB, GL_FLOAT, outMips[iMip].data());
     }
-    glDeleteTextures(numMips, textures);
+
+    if constexpr(useRenderBufferOut)
+        glDeleteRenderbuffers(1, &rbo);
+    else
+        glDeleteTextures(1, &outTex);
     glDeleteFramebuffers(1, &framebuffer);
 }
 
 FilterCubemapError filterCubemap_GGX(const char* inImgFileName,
     const char* outImgFileNamePrefix, const char* outImgExtension,
-    u32 shaderProg, u32 cubemapMeshVao,
+    u32 shaderProg,
+    u32 vao,
     const tg::GgxFilterUnifLocs& locs)
 {
     Img3f inImg = Img3f::load(inImgFileName);
@@ -307,21 +396,16 @@ FilterCubemapError filterCubemap_GGX(const char* inImgFileName,
         fprintf(stderr, "%s has a weird aspect ratio for a cubemap\n", inImgFileName);
     }
 
-    FILE* file = fopen(s_buffer, "w");
-    if(!file)
+    tl::toStringBuffer(s_buffer, outImgFileNamePrefix, 0, outImgExtension);
+    if(!inImg.save(s_buffer))
         return FilterCubemapError::CANT_OPEN_OUTPUT_FILE;
-    fwrite(inImg.data(), 1, inImg.dataSize(), file);
-    fclose(file);
 
     tl::FVector<Img3f, 16> outMips;
-    filterCubemap_GGX(outMips, inImg, shaderProg, cubemapMeshVao, locs);
+    filterCubemap_GGX(outMips, inImg, shaderProg, vao, locs);
     for(size_t i = 0; i < outMips.size(); i++) {
         tl::toStringBuffer(s_buffer, outImgFileNamePrefix, i+1, outImgExtension);
-        FILE* file = fopen(s_buffer, "w");
-        if(!file)
+        if(!outMips[i].save(s_buffer))
             return FilterCubemapError::CANT_OPEN_OUTPUT_FILE;
-        fwrite(outMips[i].data(), 1, outMips[i].dataSize(), file);
-        fclose(file);
     }
 
     return FilterCubemapError::NONE;
@@ -515,5 +599,38 @@ void uploadCubemapTexture(u32 mipLevel, u32 w, u32 h, u32 internalFormat, u32 da
     glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
 }
+
+CImg3f gerateGgxLutImg(u32 size, u32 screenQuadVao)
+{
+    CImg3f img;
+
+    u32 vertShad = glCreateShader(GL_VERTEX_SHADER);
+    defer(glDeleteShader(vertShad));
+    const char* vertSrcs[] = {
+        s_glslVersionSrc,
+        s_glslUtilsSrc,
+        s_simpleScreenQuadVertShadSrc
+    };
+
+    u32 fragShad = glCreateShader(GL_FRAGMENT_SHADER);
+    defer(glDeleteShader(fragShad));
+    glShaderSource();
+
+    u32 prog = glCreateProgram();
+    defer(glDeleteProgram(prog));
+
+    u32 fbo;
+    glGenFramebuffers(1, &fbo);
+    glBindBuffer(GL_FRAMEBUFFER, fbo);
+    u32 tex;
+    glGenTextures(1, &tex);
+    defer(glDeleteTextures(1, &tex));
+    glBindTexture(GL_TEXTURE_2D, tex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, size, size, 0, GL_RGB, GL_FLOAT, nullptr);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex, 0);
+    return img;
+}
+
+
 
 }
