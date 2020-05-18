@@ -6,6 +6,7 @@ add_library(tg
 	geometry_utils.hpp geometry_utils.cpp
     texture_utils.hpp texture_utils.cpp
 	shader_utils.hpp shader_utils.cpp
+	mesh_utils.hpp mesh_utils.cpp
 	cameras.hpp cameras.cpp
 )
 

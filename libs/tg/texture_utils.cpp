@@ -7,6 +7,7 @@
 #include <stb/stbi.h>
 #include "geometry_utils.hpp"
 #include "shader_utils.hpp"
+#include "mesh_utils.hpp"
 #include <tl/basic.hpp>
 #include <tl/basic_math.hpp>
 #include <tl/defer.hpp>
@@ -601,24 +602,63 @@ void uploadCubemapTexture(u32 mipLevel, u32 w, u32 h, u32 internalFormat, u32 da
     glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
 }
 
-CImg3f gerateGgxLutImg(u32 size, u32 screenQuadVao)
+CImg3f gerateGgxLutImg(u32 size)
 {
-    CImg3f img;
+    Img3f img;
 
-    u32 vertShad = glCreateShader(GL_VERTEX_SHADER);
-    defer(glDeleteShader(vertShad));
     const char* vertSrcs[] = {
         s_glslVersionSrc,
         s_glslUtilsSrc,
         s_simpleScreenQuadVertShadSrc
     };
+    const char* fragSrcs[] = {
+        s_glslVersionSrc,
+        s_glslUtilsSrc
+    };
+    constexpr i32 numVertSrcs = tl::size(vertSrcs);
+    constexpr i32 numFragSrcs = tl::size(fragSrcs);
+    i32 strLengths[tl::max(numVertSrcs, numFragSrcs)];
 
-    u32 fragShad = glCreateShader(GL_FRAGMENT_SHADER);
+    u32 vertShad = glCreateShader(GL_VERTEX_SHADER);
+    defer(glDeleteShader(vertShad));
+    for(i32 i = 0; i < numVertSrcs; i++)
+        strLengths[i] = tl::strlen(vertSrcs[i]);
+    glShaderSource(vertShad, numVertSrcs, vertSrcs, strLengths);
+    glCompileShader(vertShad);
+    if(const char* errMsg = tg::getShaderCompileErrors(vertShad, s_buffer)) {
+        tl::println("Error compiling vertex shader:\n", errMsg);
+        assert(false);
+    }
+
+    const u32 fragShad = glCreateShader(GL_FRAGMENT_SHADER);
     defer(glDeleteShader(fragShad));
-    glShaderSource();
+    for(i32 i = 0; i < numFragSrcs; i++)
+        strLengths[i] = tl::strlen(fragSrcs[i]);
+    glShaderSource(fragShad, numFragSrcs, fragSrcs, strLengths);
+    if(const char* errMsg = tg::getShaderCompileErrors(fragShad, s_buffer)) {
+        tl::println("Error compiling fragment shader:\n", errMsg);
+        assert(false);
+    }
 
     u32 prog = glCreateProgram();
     defer(glDeleteProgram(prog));
+    glAttachShader(prog, vertShad);
+    glAttachShader(prog, fragShad);
+    glLinkProgram(prog);
+    if(const char* errMsg = tg::getShaderLinkErrors(prog, s_buffer)) {
+        tl::println("Error linking shader:\n", errMsg);
+        assert(false);
+    }
+    glUseProgram(prog);
+    const u32 unif_numSamples = glGetUniformLocation(prog, "u_numSamples");
+    glUniform1ui(unif_numSamples, 128);
+
+    u32 vao, vbo, numVerts;
+    tg::createScreenQuadMesh2D(vao, vbo, numVerts);
+    defer(
+        glDeleteVertexArrays(1, &vao);
+        glDeleteBuffers(1, &vbo);
+    );
 
     u32 fbo;
     glGenFramebuffers(1, &fbo);
@@ -629,6 +669,15 @@ CImg3f gerateGgxLutImg(u32 size, u32 screenQuadVao)
     glBindTexture(GL_TEXTURE_2D, tex);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, size, size, 0, GL_RGB, GL_FLOAT, nullptr);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex, 0);
+
+
+    glViewport(0, 0, size, size);
+    glScissor(0, 0, size, size);
+    //glClear(GL_COLOR_BUFFER_BIT);
+    glDrawArrays(GL_TRIANGLES, 0, numVerts);
+    img = Img3f(size, size);
+    glReadPixels(0, 0, size, size, GL_RGB, GL_FLOAT, img.data());
+
     return img;
 }
 
