@@ -63,8 +63,8 @@ const float cubeVerts[6*6*(3+2)] = {
     +1, +1, -1,
 };
 
-extern const float screenQuad2DVerts[6*2] = {
-    -1, -1,  +1, -1,  +1, +1
+const float screenQuad2DVerts[6*2] = {
+    -1, -1,  +1, -1,  +1, +1,
     -1, -1,  +1, +1,  -1, +1
 };
 

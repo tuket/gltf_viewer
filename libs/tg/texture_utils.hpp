@@ -58,6 +58,8 @@ void cylinderMapToCubeMap(CubeImgView3f cube, CImg3f cylindricMap);
 
 void uploadCubemapTexture(u32 mipLevel, u32 w, u32 h, u32 internalFormat, u32 dataFormat, u32 dataType, u8* data);
 
-CImg3f gerateGgxLutImg(u32 sizePixels);
+void createGgxLutTexShader(u32& prog, u32& vertShad, u32& fragShad, u32& numSamplesUnifLoc);
+u32 drawGgxLutTex(u32 fbo, u32 vao, u32 shaderProg);
+Img3f generateGgxLutImg(u32 sizePixels);
 
 }

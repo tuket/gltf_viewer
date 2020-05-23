@@ -5,6 +5,7 @@
 #include <tg/shader_utils.hpp>
 #include <tg/cameras.hpp>
 #include <tg/geometry_utils.hpp>
+#include <tg/mesh_utils.hpp>
 #include <tg/texture_utils.hpp>
 #include <tl/defer.hpp>
 #include <glm/glm.hpp>

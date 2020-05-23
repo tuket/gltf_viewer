@@ -136,6 +136,8 @@ void main()
 
 static const char s_ggxLutGenerateSrc_fragShad[] =
 R"GLSL(
+layout(location = 0) out vec4 o_color;
+
 uniform uint u_numSamples;
 
 in vec2 v_tc;
@@ -143,7 +145,7 @@ in vec2 v_tc;
 float ggxG(float NoV, float rough4)
 {
     return 2.0 * NoV /
-        ( NoV + sqrt(rough4 + (1 - rough4) * NoV*NoV) );
+        ( NoV + sqrt(rough4 + (1.0 - rough4) * NoV*NoV) );
 }
 
 void main()
@@ -151,21 +153,21 @@ void main()
     float NoV = v_tc.x;
     float rough2 = v_tc.y;
     vec3 V = vec3(
-        sqrt(1.0 - cosV * cosV),
+        sqrt(1.0 - NoV * NoV),
         0,
         NoV);
     float rough4 = rough2 * rough2;
-    vec2 r = 0;
-    for(uint iSample = 0; iSample < u_numSamples; iSample++)
+    vec2 r = vec2(0);
+    for(uint iSample = 0u; iSample < u_numSamples; iSample++)
     {
-        vec2 seed = hammersleyVec2(i, u_numSamples);
-        vec3 H = importanceSampleGgxD(seed, rough2, V);
-        vec3 L = 2 * dot(V, H) * H - V;
+        vec2 seed = hammersleyVec2(iSample, u_numSamples);
+        vec3 H = importanceSampleGgxD(seed, rough2, vec3(0, 0, 1));
+        vec3 L = 2.0 * dot(V, H) * H - V;
         float NoL = max(0.0, L.z);
         float NoH = max(0.0, H.z);
         float VoH = max(0.0, dot(V, H));
-        if(NoL > 0) {
-            float G = ggxG(V, rough4) * ggxG(L, rough4);
+        if(NoL > 0.0) {
+            float G = ggxG(NoV, rough4) * ggxG(NoL, rough4);
             float G_vis = G * VoH / (NoH * NoV);
             float Fc = pow(1.0 - VoH, 5.0);
             r.x += (1 - Fc) * G_vis;
@@ -174,6 +176,7 @@ void main()
     }
 
     r /= float(u_numSamples);
+    o_color = vec4(r, 0, 1);
 }
 )GLSL";
 
@@ -602,10 +605,8 @@ void uploadCubemapTexture(u32 mipLevel, u32 w, u32 h, u32 internalFormat, u32 da
     glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
 }
 
-CImg3f gerateGgxLutImg(u32 size)
+void createGgxLutTexShader(u32& prog, u32& vertShad, u32& fragShad, u32& numSamplesUnifLoc)
 {
-    Img3f img;
-
     const char* vertSrcs[] = {
         s_glslVersionSrc,
         s_glslUtilsSrc,
@@ -613,13 +614,17 @@ CImg3f gerateGgxLutImg(u32 size)
     };
     const char* fragSrcs[] = {
         s_glslVersionSrc,
-        s_glslUtilsSrc
+        s_glslUtilsSrc,
+        s_hammersleyShadSrc,
+        s_ggxImportanceSampleDSrc,
+        s_ggxLutGenerateSrc_fragShad
     };
+
     constexpr i32 numVertSrcs = tl::size(vertSrcs);
     constexpr i32 numFragSrcs = tl::size(fragSrcs);
     i32 strLengths[tl::max(numVertSrcs, numFragSrcs)];
 
-    u32 vertShad = glCreateShader(GL_VERTEX_SHADER);
+    vertShad = glCreateShader(GL_VERTEX_SHADER);
     defer(glDeleteShader(vertShad));
     for(i32 i = 0; i < numVertSrcs; i++)
         strLengths[i] = tl::strlen(vertSrcs[i]);
@@ -630,17 +635,18 @@ CImg3f gerateGgxLutImg(u32 size)
         assert(false);
     }
 
-    const u32 fragShad = glCreateShader(GL_FRAGMENT_SHADER);
+    fragShad = glCreateShader(GL_FRAGMENT_SHADER);
     defer(glDeleteShader(fragShad));
     for(i32 i = 0; i < numFragSrcs; i++)
         strLengths[i] = tl::strlen(fragSrcs[i]);
     glShaderSource(fragShad, numFragSrcs, fragSrcs, strLengths);
+    glCompileShader(fragShad);
     if(const char* errMsg = tg::getShaderCompileErrors(fragShad, s_buffer)) {
         tl::println("Error compiling fragment shader:\n", errMsg);
         assert(false);
     }
 
-    u32 prog = glCreateProgram();
+    prog = glCreateProgram();
     defer(glDeleteProgram(prog));
     glAttachShader(prog, vertShad);
     glAttachShader(prog, fragShad);
@@ -649,12 +655,27 @@ CImg3f gerateGgxLutImg(u32 size)
         tl::println("Error linking shader:\n", errMsg);
         assert(false);
     }
+
     glUseProgram(prog);
-    const u32 unif_numSamples = glGetUniformLocation(prog, "u_numSamples");
-    glUniform1ui(unif_numSamples, 128);
+    numSamplesUnifLoc = glGetUniformLocation(prog, "u_numSamples");
+}
+
+Img3f generateGgxLutImg(u32 size)
+{
+    Img3f img;
+
+    u32 prog, vertShad, fragShad, numSamplesUnifLoc;
+    createGgxLutTexShader(prog, vertShad, fragShad, numSamplesUnifLoc);
+    glUniform1ui(numSamplesUnifLoc, 128);
+    defer(
+        glDeleteShader(vertShad);
+        glDeleteShader(fragShad);
+        glDeleteProgram(prog);
+    );
 
     u32 vao, vbo, numVerts;
     tg::createScreenQuadMesh2D(vao, vbo, numVerts);
+    glBindVertexArray(vao);
     defer(
         glDeleteVertexArrays(1, &vao);
         glDeleteBuffers(1, &vbo);
@@ -662,7 +683,7 @@ CImg3f gerateGgxLutImg(u32 size)
 
     u32 fbo;
     glGenFramebuffers(1, &fbo);
-    glBindBuffer(GL_FRAMEBUFFER, fbo);
+    glBindFramebuffer(GL_FRAMEBUFFER, fbo);
     u32 tex;
     glGenTextures(1, &tex);
     defer(glDeleteTextures(1, &tex));
@@ -673,7 +694,6 @@ CImg3f gerateGgxLutImg(u32 size)
 
     glViewport(0, 0, size, size);
     glScissor(0, 0, size, size);
-    //glClear(GL_COLOR_BUFFER_BIT);
     glDrawArrays(GL_TRIANGLES, 0, numVerts);
     img = Img3f(size, size);
     glReadPixels(0, 0, size, size, GL_RGB, GL_FLOAT, img.data());

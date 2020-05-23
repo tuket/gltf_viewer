@@ -7,6 +7,7 @@
 bool test_cylinderMapToCubeMap();
 bool test_cubemap();
 bool test_ggxConvolution();
+bool test_generateGgxLut();
 
 struct TestInfo {
     CStr name;
@@ -16,7 +17,8 @@ struct TestInfo {
 static TestInfo tests[] = {
     {"cylinderMapToCubeMap", test_cylinderMapToCubeMap},
     {"cubemap", test_cubemap},
-    {"ggxConvolution", test_ggxConvolution}
+    {"ggxConvolution", test_ggxConvolution},
+    {"generateGgxLut", test_generateGgxLut}
 };
 
 static char scratchStr[1024];

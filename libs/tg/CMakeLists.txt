@@ -27,6 +27,7 @@ add_executable(tg_tests EXCLUDE_FROM_ALL
 	tests/test_cylindermap_to_cubemap.cpp
 	tests/test_cubemap.cpp
 	tests/test_ggx_convolution.cpp
+	tests/test_generate_ggx_lut.cpp
 )
 target_link_libraries(tg_tests
 	glm
