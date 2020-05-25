@@ -5,8 +5,13 @@
 #include <GL/glu.h>
 #include <GLFW/glfw3.h>
 #include <glm/gtc/constants.hpp>
+#include <tl/defer.hpp>
+#include <tl/fmt.hpp>
+#include <tg/shader_utils.hpp>
 
 constexpr float PI = glm::pi<float>();
+
+char g_buffer[4*1024];
 
 static void glErrorCallback(const char *name, void *funcptr, int len_args, ...) {
     GLenum error_code;
@@ -96,3 +101,70 @@ void addOrbitCameraBaviour(GLFWwindow* window, OrbitCameraInfo& orbitCamInfo)
     glfwSetScrollCallback(window, onMouseWheel);
 }
 
+const char g_cubemapVertShadSrc[] =
+R"GLSL(
+#version 330 core
+
+in layout(location = 0) vec3 a_pos;
+
+out vec3 v_modelPos;
+
+uniform mat4 u_modelViewProjMat;
+
+
+void main()
+{
+    v_modelPos = a_pos;
+    gl_Position = u_modelViewProjMat * vec4(a_pos, 1);
+}
+)GLSL";
+
+const char g_cubemapFragShadSrc[] =
+R"GLSL(
+#version 330 core
+
+layout(location = 0) out vec4 o_color;
+
+in vec3 v_modelPos;
+
+uniform samplerCube u_cubemap;
+
+void main()
+{
+    o_color = texture(u_cubemap, normalize(v_modelPos));
+}
+)GLSL";
+
+void createSimpleCubemapShader(u32& prog, SimpleCubemapShaderUnifLocs& unifLocs)
+{
+    const u32 vertShad = glCreateShader(GL_VERTEX_SHADER);
+    defer(glDeleteShader(vertShad));
+    static const char* vertShadSrcPtr = g_cubemapVertShadSrc;
+    glShaderSource(vertShad, 1, &vertShadSrcPtr, nullptr);
+    glCompileShader(vertShad);
+    if(const char* errMsg = tg::getShaderCompileErrors(vertShad, g_buffer)) {
+        tl::println("Error compiling vertex shader: ", errMsg);
+        assert(false);
+    }
+
+    const u32 fragShad = glCreateShader(GL_FRAGMENT_SHADER);
+    defer(glDeleteShader(fragShad));
+    static const char* fragShadSrcPtr = g_cubemapVertShadSrc;
+    glShaderSource(fragShad, 1, &fragShadSrcPtr, nullptr);
+    glCompileShader(fragShad);
+
+    prog = glCreateProgram();
+    glAttachShader(prog, vertShad);
+    glAttachShader(prog, fragShad);
+    glLinkProgram(prog);
+    if(const char* errMsg = tg::getShaderLinkErrors(prog, g_buffer)) {
+        tl::println("Error compiling fragment shader: ", errMsg);
+        assert(false);
+    }
+
+    glUseProgram(prog);
+    unifLocs.modelViewProj = glGetUniformLocation(prog, "u_modelViewProjMat");
+    assert(unifLocs.modelViewProj != -1);
+    unifLocs.cubemap = glGetUniformLocation(prog, "u_cubemap");
+    assert(unifLocs.cubemap != -1);
+}

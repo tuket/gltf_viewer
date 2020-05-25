@@ -6,8 +6,6 @@
 #include <glad/glad.h>
 #include "test_utils.hpp"
 
-static char s_buffer[4*1024];
-
 bool test_ggxConvolution()
 {
     auto window = simpleInitGlfwGL();
@@ -18,7 +16,7 @@ bool test_ggxConvolution()
     glAttachShader(prog, vertShader);
     glAttachShader(prog, fragShader);
     glLinkProgram(prog);
-    if(const char* errMsg = tg::getShaderLinkErrors(prog, s_buffer)) {
+    if(const char* errMsg = tg::getShaderLinkErrors(prog, g_buffer)) {
         tl::println("Error linking shader:\n", errMsg);
         return false;
     }

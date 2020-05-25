@@ -57,8 +57,6 @@ struct UnifLocs {
     i32 cubemap;
 } unifLocs;
 
-static char s_buffer[4*1024];
-
 static OrbitCameraInfo s_orbitCam;
 
 static u32 s_environmentTextureUnit = 1;
@@ -131,7 +129,7 @@ bool test_cubemap()
         const char* vertShadSrc = s_vertShadSrc;
         glShaderSource(vertShad, 1, &vertShadSrc, nullptr);
         glCompileShader(vertShad);
-        if(const char* errorMsg = tg::getShaderCompileErrors(vertShad, s_buffer)) {
+        if(const char* errorMsg = tg::getShaderCompileErrors(vertShad, g_buffer)) {
             printf("Error compiling vertex shader:\n%s\n", errorMsg);
             return 0;
         }
