@@ -318,6 +318,7 @@ void filterCubemap_GGX(tl::FVector<Img3f, 16>& outMips,
     glGenTextures(1, &inTex);
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_CUBE_MAP, inTex);
+    tg::simpleInitCubemapTexture();
     tg::uploadCubemapTexture(0, 4*sidePixels, 3*sidePixels, GL_RGB16F, GL_RGB, GL_FLOAT, (u8*)inImg.data());
 
     glBindVertexArray(vao);
@@ -582,6 +583,15 @@ u8 getGetPixelSize(u32 format, u32 type)
     return 1;
 }
 
+void simpleInitCubemapTexture()
+{
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+}
+
 void uploadCubemapTexture(u32 mipLevel, u32 w, u32 h, u32 internalFormat, u32 dataFormat, u32 dataType, u8* data)
 {
     const u8 ps = getGetPixelSize(dataFormat, dataType);
@@ -598,11 +608,6 @@ void uploadCubemapTexture(u32 mipLevel, u32 w, u32 h, u32 internalFormat, u32 da
     upload(GL_TEXTURE_CUBE_MAP_POSITIVE_Y, ps * side);
     upload(GL_TEXTURE_CUBE_MAP_NEGATIVE_Z, ps * (w*side + 3*side));
     upload(GL_TEXTURE_CUBE_MAP_POSITIVE_Z, ps * (w*side + side));
-    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
 }
 
 void createGgxLutTexShader(u32& prog, u32& vertShad, u32& fragShad, u32& numSamplesUnifLoc)

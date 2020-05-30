@@ -18,43 +18,10 @@ constexpr float PI = glm::pi<float>();
 
 static GLFWwindow* window;
 
-static const char s_vertShadSrc[] =
-R"GLSL(
-#version 330 core
-
-in layout(location = 0) vec3 a_pos;
-
-out vec3 v_modelPos;
-
-uniform mat4 u_modelViewProjMat;
-
-
-void main()
-{
-    v_modelPos = a_pos;
-    gl_Position = u_modelViewProjMat * vec4(a_pos, 1);
-}
-)GLSL";
-
-static const char s_fragShadSrc[] =
-R"GLSL(
-#version 330 core
-
-layout(location = 0) out vec4 o_color;
-
-in vec3 v_modelPos;
-
-uniform samplerCube u_cubemap;
-
-void main()
-{
-    o_color = texture(u_cubemap, normalize(v_modelPos));
-}
-)GLSL";
-
 struct UnifLocs {
     i32 modelViewProj;
     i32 cubemap;
+    i32 gammaExp;
 } unifLocs;
 
 static OrbitCameraInfo s_orbitCam;
@@ -93,6 +60,7 @@ bool test_cubemap()
     defer(glDeleteTextures(2, cubemapTextures));
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_CUBE_MAP, cubemapTextures[0]);
+    tg::simpleInitCubemapTexture();
     {
         int w, h, nc;
         u8* data = stbi_load("cubemap_test_rgb.png", &w, &h, &nc, 3);
@@ -108,6 +76,7 @@ bool test_cubemap()
 
     glActiveTexture(GL_TEXTURE1);
     glBindTexture(GL_TEXTURE_CUBE_MAP, cubemapTextures[1]);
+    tg::simpleInitCubemapTexture();
     {
         int w, h, nc;
         u8* data = stbi_load("test.hdr", &w, &h, &nc, 3);
@@ -121,41 +90,10 @@ bool test_cubemap()
         }
     }
 
-    u32 prog = glCreateProgram();
+    u32 prog;
+    tg::createSimpleCubemapShader(prog, unifLocs.modelViewProj, unifLocs.cubemap, unifLocs.gammaExp);
     defer(glDeleteProgram(prog));
-    {
-        u32 vertShad = glCreateShader(GL_VERTEX_SHADER);
-        defer(glDeleteShader(vertShad));
-        const char* vertShadSrc = s_vertShadSrc;
-        glShaderSource(vertShad, 1, &vertShadSrc, nullptr);
-        glCompileShader(vertShad);
-        if(const char* errorMsg = tg::getShaderCompileErrors(vertShad, g_buffer)) {
-            printf("Error compiling vertex shader:\n%s\n", errorMsg);
-            return 0;
-        }
-
-        u32 fragShad = glCreateShader(GL_FRAGMENT_SHADER);
-        defer(glDeleteShader(fragShad));
-        const char* fragShadSrc = s_fragShadSrc;
-        glShaderSource(fragShad, 1, &fragShadSrc, nullptr);
-        glCompileShader(fragShad);
-        if(const char* errorMsg = tg::getShaderCompileErrors(fragShad, s_buffer)) {
-            printf("Error compiling fragment shader:\n%s\n", errorMsg);
-            return 0;
-        }
-
-        glAttachShader(prog, vertShad);
-        glAttachShader(prog, fragShad);
-        glLinkProgram(prog);
-        if(const char* errorMsg = tg::getShaderLinkErrors(prog, s_buffer)) {
-            printf("Error linking:\n%s\n", errorMsg);
-            return 0;
-        }
-    }
-
     glUseProgram(prog);
-    unifLocs.modelViewProj = glGetUniformLocation(prog, "u_modelViewProjMat");
-    unifLocs.cubemap = glGetUniformLocation(prog, "u_cubemap");
     glUniform1i(unifLocs.cubemap, 0);
 
     u32 vao, vbo;
@@ -165,7 +103,7 @@ bool test_cubemap()
     glGenBuffers(1, &vbo);
     defer(glDeleteVertexArrays(1, &vbo));
     glBindBuffer(GL_ARRAY_BUFFER, vbo);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(tg::cubeVerts), tg::cubeVerts, GL_STATIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(tg::k_cubeVerts), tg::k_cubeVerts, GL_STATIC_DRAW);
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, nullptr);
 
