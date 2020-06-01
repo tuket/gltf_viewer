@@ -5,6 +5,7 @@
 #include <stb/stbi.h>
 #include <GLFW/glfw3.h>
 #include <glm/gtx/transform.hpp>
+#include <glm/gtc/matrix_inverse.hpp>
 #include <tl/containers/fvector.hpp>
 #include <tl/fmt.hpp>
 #include <tl/defer.hpp>
@@ -19,6 +20,7 @@ static char s_buffer[4*1024];
 static OrbitCameraInfo s_orbitCam;
 static struct { u32 envmap, convolution; } s_textures;
 static u32 s_envCubeVao, s_envCubeVbo;
+static u32 s_objVao, s_objVbo, s_objNumVerts;
 static u32 s_envProg, s_iblProg;
 static struct { i32 modelViewProj, cubemap, gammaExp; } s_envShadUnifLocs;
 static struct { i32 camPos, model, modelViewProj, albedo, rough2, metallic, F0, convolutedEnv, lut; } s_iblUnifLocs;
@@ -38,10 +40,10 @@ out vec3 v_normal;
 
 void main()
 {
-    v_pos = u_model * vec4(v_pos, 1.0);
-    v_pos /= v_pos.w;
-    v_normal = u_model * vec4(a_normal, 0.0);
-    gl_Position = m_modelViewProj * vec4(a_pos, 1.0);
+    vec4 worldPos4 = u_model * vec4(a_pos, 1.0);
+    v_pos = worldPos4.xyz / worldPos4.w;
+    v_normal = (u_model * vec4(a_normal, 0.0)).xyz;
+    gl_Position = u_modelViewProj * vec4(a_pos, 1.0);
 }
 )GLSL";
 
@@ -63,16 +65,21 @@ in vec3 v_normal;
 void main()
 {
     vec3 N = normalize(v_normal);
-    vec3 V = -normalize(u_camPos - v_pos);
+    vec3 V = normalize(u_camPos - v_pos);
     vec3 L = reflect(-V, N);
-    vec3 env = texture(u_convolutedEnv, L);
-    o_color(env, 1.0);
+    vec3 env = texture(u_convolutedEnv, L).rgb;
+        env = pow(env, vec3(1.0/2.2, 1.0/2.2, 1.0/2.2));
+    o_color = vec4(env, 1.0);
+    //o_color = vec4(normalize(N), 1.0);
 }
 )GLSL";
 
 bool test_iblPbr()
 {
     GLFWwindow* window = simpleInitGlfwGL();
+    s_orbitCam.distance = 10;
+    s_orbitCam.heading = 0;
+    s_orbitCam.pitch = 0;
     addOrbitCameraBaviour(window, s_orbitCam);
 
     glEnable(GL_TEXTURE_CUBE_MAP_SEAMLESS);
@@ -121,6 +128,13 @@ bool test_iblPbr()
     glBufferData(GL_ARRAY_BUFFER, sizeof(tg::k_cubeVerts), tg::k_cubeVerts, GL_STATIC_DRAW);
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, nullptr);
+
+    // init object mesh
+    tg::createCubeMesh(s_objVao, s_objVbo, s_objNumVerts, true);
+    defer(
+        glDeleteVertexArrays(1, &s_objVao);
+        glDeleteBuffers(1, &s_objVao);
+    );
 
     // init shaders
     tg::createSimpleCubemapShader(s_envProg,
@@ -211,10 +225,11 @@ bool test_iblPbr()
         glEnable(GL_DEPTH_TEST);
 
         const glm::mat4 viewProjMtx = projMtx * viewMtx;
+        const glm::mat4 modelMtx(1);
         glUseProgram(s_iblProg);
-        const glm::vec3 camPos = -glm::vec3(viewMtx[3]);
-        glUniform3fv(s_iblUnifLocs.camPos, 1, &camPos[0]);
-        //glUniformMatrix4fv(s_iblUnifLocs.model);
+        const glm::vec4 camPos4 = glm::affineInverse(viewMtx) * glm::vec4(0,0,0,1);
+        glUniform3fv(s_iblUnifLocs.camPos, 1, &camPos4[0]);
+        glUniformMatrix4fv(s_iblUnifLocs.model, 1, GL_FALSE, &modelMtx[0][0]);
         glUniformMatrix4fv(s_iblUnifLocs.modelViewProj, 1, GL_FALSE, &viewProjMtx[0][0]);
         const glm::vec3 albedo(0.5, 0.5, 0.5);
         if(s_iblUnifLocs.albedo != -1)
@@ -226,6 +241,8 @@ bool test_iblPbr()
             glUniform3fv(s_iblUnifLocs.F0, 1, &ironF0[0]);
         if(s_iblUnifLocs.convolutedEnv != -1)
             glUniform1i(s_iblUnifLocs.convolutedEnv, 1);
+        glBindVertexArray(s_objVao);
+        glDrawArrays(GL_TRIANGLES, 0, 6*6);
 
         glfwSwapBuffers(window);
         glfwWaitEventsTimeout(0.01);
