@@ -36,7 +36,7 @@ static const char s_simpleCubemapVertShadSrc[] =
 R"GLSL(
 #version 330 core
 
-in layout(location = 0) vec3 a_pos;
+layout(location = 0) in vec3 a_pos;
 
 out vec3 v_modelPos;
 

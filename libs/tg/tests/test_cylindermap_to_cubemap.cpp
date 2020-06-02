@@ -24,7 +24,7 @@ using glm::ivec2;
 
 bool test_cylinderMapToCubeMap()
 {
-    auto img = tg::Img3f::load("test.hdr");
+    auto img = tg::Img3f::load("autumn_forest_01_4k.hdr");
     if(!img.data())
         return false;
     const int faceSize = img.height()/2;

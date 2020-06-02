@@ -165,6 +165,7 @@ Img<T>& Img<T>::operator=(Img&& o)
     Img<T>::_stride = o._stride;
     Img<T>::_data = o._data;
     o._data = nullptr;
+    return *this;
 }
 
 }
