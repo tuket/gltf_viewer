@@ -8,6 +8,7 @@ add_library(tg
 	shader_utils.hpp shader_utils.cpp
 	mesh_utils.hpp mesh_utils.cpp
 	cameras.hpp cameras.cpp
+	internal.cpp #internal.hpp
 )
 
 target_include_directories(tg PUBLIC  ${PROJECT_SOURCE_DIR}/..)
