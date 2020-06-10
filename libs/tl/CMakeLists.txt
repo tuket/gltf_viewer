@@ -59,7 +59,6 @@ target_include_directories(tl PUBLIC  ${INC})
 
 target_link_libraries(tl
 	glm
-	SDL2
 )
 
 #set_target_properties(tl PROPERTIES COTIRE_ADD_UNITY_BUILD FALSE)
