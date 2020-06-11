@@ -21,9 +21,12 @@ static OrbitCameraInfo s_orbitCam;
 static struct { u32 envmap, convolution; } s_textures;
 static u32 s_envCubeVao, s_envCubeVbo;
 static u32 s_objVao, s_objVbo, s_objEbo, s_objNumInds;
-static u32 s_envProg, s_iblProg;
+static u32 s_envProg, s_iblProg, s_rtProg;
 static struct { i32 modelViewProj, cubemap, gammaExp; } s_envShadUnifLocs;
-static struct { i32 camPos, model, modelViewProj, albedo, rough2, metallic, F0, convolutedEnv, lut; } s_iblUnifLocs;
+struct CommonUnifLocs { i32 camPos, model, modelViewProj, albedo, rough2, metallic, F0, convolutedEnv, lut; };
+static struct : public CommonUnifLocs {  } s_iblUnifLocs;
+static struct : public CommonUnifLocs { i32 numSamples; } s_rtUnifLocs;
+static float s_splitterPercent = 0.5;
 
 static const char k_glslVersionSrc[] = "#version 330 core\n\n";
 
@@ -70,6 +73,35 @@ void main()
     vec3 env = texture(u_convolutedEnv, L).rgb;
         env = pow(env, vec3(1.0/2.2, 1.0/2.2, 1.0/2.2));
     o_color = vec4(env, 1.0);
+    //o_color = vec4(normalize(N), 1.0);
+}
+)GLSL";
+
+static const char k_rtFragShadSrc[] = // uses ray tracing to sample the environment
+R"GLSL(
+layout (location = 0) out vec4 o_color;
+
+uniform vec3 u_camPos;
+uniform vec3 u_albedo;
+uniform float u_rough2;
+uniform float u_metallic;
+uniform vec3 u_F0;
+uniform samplerCube u_convolutedEnv;
+uniform sampler2D u_lut;
+
+in vec3 v_pos;
+in vec3 v_normal;
+
+void main()
+{
+    vec3 N = normalize(v_normal);
+    vec3 V = normalize(u_camPos - v_pos);
+    vec3 L = reflect(-V, N);
+    vec3 env = textureLod(u_convolutedEnv, L, 2.0).rgb;
+        env = pow(env, vec3(1.0/2.2, 1.0/2.2, 1.0/2.2));
+    o_color = vec4(env, 1.0);
+    //if(o_color.x < 10)
+    //    o_color = vec4(0, 1, 1, 1);
     //o_color = vec4(normalize(N), 1.0);
 }
 )GLSL";
@@ -151,12 +183,15 @@ bool test_iblPbr()
     glUniform1f(s_envShadUnifLocs.gammaExp, 1.f / 2.2f);
 
     s_iblProg = glCreateProgram();
+    s_rtProg = glCreateProgram();
     {
         const char* vertSrcs[] = { k_glslVersionSrc, k_vertShadSrc };
         const char* fragSrcs[] = { k_glslVersionSrc, k_fragShadSrc };
+        const char* rtFragSrcs[] = { k_glslVersionSrc, k_rtFragShadSrc };
         constexpr int numVertSrcs = tl::size(vertSrcs);
         constexpr int numFragSrcs = tl::size(fragSrcs);
-        int srcsSizes[tl::max(numVertSrcs, numVertSrcs)];
+        constexpr int numRtFragSrcs = tl::size(rtFragSrcs);
+        int srcsSizes[tl::max(numVertSrcs, numVertSrcs, numRtFragSrcs)];
 
         u32 vertShad = glCreateShader(GL_VERTEX_SHADER);
         defer(glDeleteShader(vertShad));
@@ -188,18 +223,45 @@ bool test_iblPbr()
             return 1;
         }
 
-        s_iblUnifLocs = {
-            glGetUniformLocation(s_iblProg, "u_camPos"),
-            glGetUniformLocation(s_iblProg, "u_model"),
-            glGetUniformLocation(s_iblProg, "u_modelViewProj"),
-            glGetUniformLocation(s_iblProg, "u_albedo"),
-            glGetUniformLocation(s_iblProg, "u_rough2"),
-            glGetUniformLocation(s_iblProg, "u_metallic"),
-            glGetUniformLocation(s_iblProg, "u_F0"),
-            glGetUniformLocation(s_iblProg, "u_convolutedEnv"),
-            glGetUniformLocation(s_iblProg, "u_lut"),
-        };
+        u32 rtFragShad = glCreateShader(GL_FRAGMENT_SHADER);
+        defer(glDeleteShader(rtFragShad));
+        for(int i = 0; i < numRtFragSrcs; i++)
+            srcsSizes[i] = strlen(rtFragSrcs[i]);
+        glShaderSource(rtFragShad, numRtFragSrcs, rtFragSrcs, srcsSizes);
+        glCompileShader(rtFragShad);
+        if(const char* errMsg = tg::getShaderCompileErrors(rtFragShad, s_buffer)) {
+            tl::println("Error compiling RT frament shader:\n", errMsg);
+            return 1;
+        }
+
+        glAttachShader(s_rtProg, vertShad);
+        glAttachShader(s_rtProg, rtFragShad);
+        glLinkProgram(s_rtProg);
+        if(const char* errMsg = tg::getShaderLinkErrors(s_rtProg, s_buffer)) {
+            tl::println("Error compiling frament shader:\n", errMsg);
+            return 1;
+        }
+
+        { // collect unif locs
+            CommonUnifLocs* commonUnifLocs[2] = { &s_iblUnifLocs, &s_rtUnifLocs };
+            u32 progs[2] = { s_iblProg, s_rtProg };
+            for(int i = 0; i < 2; i++) {
+                *commonUnifLocs[i] = {
+                    glGetUniformLocation(progs[i], "u_camPos"),
+                    glGetUniformLocation(progs[i], "u_model"),
+                    glGetUniformLocation(progs[i], "u_modelViewProj"),
+                    glGetUniformLocation(progs[i], "u_albedo"),
+                    glGetUniformLocation(progs[i], "u_rough2"),
+                    glGetUniformLocation(progs[i], "u_metallic"),
+                    glGetUniformLocation(progs[i], "u_F0"),
+                    glGetUniformLocation(progs[i], "u_convolutedEnv"),
+                    glGetUniformLocation(progs[i], "u_lut"),
+                };
+            }
+            s_rtUnifLocs.numSamples = glGetUniformLocation(s_rtProg, "u_numSamples");
+        }
     }
+    defer(glDeleteProgram(s_rtProg));
     defer(glDeleteProgram(s_iblProg));
 
     while(!glfwWindowShouldClose(window))
@@ -232,7 +294,8 @@ bool test_iblPbr()
 
         const glm::mat4 viewProjMtx = projMtx * viewMtx;
         const glm::mat4 modelMtx(1);
-        glUseProgram(s_iblProg);
+        //glUseProgram(s_iblProg);
+        glUseProgram(s_rtProg);
         const glm::vec4 camPos4 = glm::affineInverse(viewMtx) * glm::vec4(0,0,0,1);
         glUniform3fv(s_iblUnifLocs.camPos, 1, &camPos4[0]);
         glUniformMatrix4fv(s_iblUnifLocs.model, 1, GL_FALSE, &modelMtx[0][0]);
@@ -249,6 +312,17 @@ bool test_iblPbr()
             glUniform1i(s_iblUnifLocs.convolutedEnv, 1);
         glBindVertexArray(s_objVao);
         glDrawElements(GL_TRIANGLES, s_objNumInds, GL_UNSIGNED_INT, nullptr);
+
+        // draw splitter line
+        {
+            glEnable(GL_SCISSOR_TEST);
+            int x0 = screenW * s_splitterPercent;
+            x0 = tl::max(0, x0 - 1);
+            int lineWidth = tl::min(1, screenW - x0);
+            glScissor(x0, 0, lineWidth, screenH);
+            glClearColor(0, 1, 0, 1);
+            glClear(GL_COLOR_BUFFER_BIT);
+        }
 
         glfwSwapBuffers(window);
         glfwWaitEventsTimeout(0.01);

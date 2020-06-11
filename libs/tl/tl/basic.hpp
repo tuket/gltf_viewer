@@ -19,18 +19,28 @@ void swap(T& a, T& b)
     b = move(x);
 }
 
-template <typename T>
-static constexpr T min(const T& a, const T& b) noexcept
+template <typename T, typename... Ts>
+static constexpr const T& min(const T& a, const Ts&... b) noexcept
 {
-    // return a if equal
-    return (a > b) ? b : a;
+    const T* r = &a;
+    constexpr int n = sizeof...(b);
+    const T* v[] = {(&b)...};
+    for(int i = 0; i < n; i++)
+        if(*v[i] < *r)
+            r = v[i];
+    return *r;
 }
 
-template <typename T>
-static constexpr T max(const T& a, const T& b) noexcept
+template <typename T, typename... Ts>
+static constexpr const T& max(const T& a, const Ts&... b) noexcept
 {
-    // return a if equal
-    return (b > a) ? b : a;
+    const T* r = &a;
+    constexpr int n = sizeof...(b);
+    const T* v[] = {(&b)...};
+    for(int i = 0; i < n; i++)
+        if(*v[i] > *r)
+            r = v[i];
+    return *r;
 }
 
 template <typename T>
