@@ -7,7 +7,8 @@ namespace tg
 
 void createScreenQuadMesh2D(u32& vao, u32& vbo, u32& numVerts);
 void createCubeMesh(u32& vao, u32& vbo, u32& numVerts, bool withNormals);
-void createIcoSphereMesh(u32& vao, u32& vbo, u32& ebo, u32& numTriangles, u32 subDivs, bool withNormals);
+// includes positions and normals (TRIANGLES)
+void createIcoSphereMesh(u32& vao, u32& vbo, u32& ebo, u32& numInds, u32 subDivs);
 
 // vertex positions of a cube center in the origin of corrdinates with side of length 2
 extern const float k_cubeVerts[6*6*3]; // positions only

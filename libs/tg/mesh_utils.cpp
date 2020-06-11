@@ -94,7 +94,7 @@ static void createIcoSphereMeshData(u32& numVerts, u32& numInds, vec3** verts, u
     {
         int vi = 0;
         auto addVert = [&](vec3 p) {
-            (*verts)[vi++] = /*glm::normalize*/(p);
+            (*verts)[vi++] = glm::normalize(p);
         };
         addVert(s_icosahedronVerts[0]);
 
@@ -230,12 +230,11 @@ static void createIcoSphereMeshData(u32& numVerts, u32& numInds, vec3** verts, u
     }
 }
 
-void createIcoSphereMesh(u32& vao, u32& vbo, u32& ebo, u32& numVerts, u32 subDivs, bool withNormals)
+void createIcoSphereMesh(u32& vao, u32& vbo, u32& ebo, u32& numInds, u32 subDivs)
 {
-    u32 numInds;
+    u32 numVerts;
     createIcoSphereMeshData(numVerts, numInds, nullptr, nullptr, subDivs);
-    const u32 numVec3 = numVerts * (1 + withNormals);
-    vec3* positions = new vec3[numVec3];
+    vec3* positions = new vec3[numVerts];
     defer(delete[] positions);
     u32* inds = new u32[numInds];
     defer(delete[] inds);
@@ -245,15 +244,15 @@ void createIcoSphereMesh(u32& vao, u32& vbo, u32& ebo, u32& numVerts, u32 subDiv
 
     glGenBuffers(1, &vbo);
     glBindBuffer(GL_ARRAY_BUFFER, vbo);
-    glBufferData(GL_ARRAY_BUFFER, numVec3 * sizeof(vec3), positions, GL_STATIC_DRAW);
-    glEnableVertexAttribArray(0);
+    glBufferData(GL_ARRAY_BUFFER, numVerts * sizeof(vec3), positions, GL_STATIC_DRAW);
+    glEnableVertexAttribArray(0); // positions
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, nullptr);
-    if(withNormals) {
-        glEnableVertexAttribArray(1);
-        glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, (void*)(sizeof(vec3) * numVerts));
-    }
+    glEnableVertexAttribArray(1); // normals
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 0, nullptr);
 
     glGenBuffers(1, &ebo);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, numInds * sizeof(u32), inds, GL_STATIC_DRAW);
 }
 
 const float k_cubeVerts[6*6*3] = {

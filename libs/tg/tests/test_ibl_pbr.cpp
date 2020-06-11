@@ -20,7 +20,7 @@ static char s_buffer[4*1024];
 static OrbitCameraInfo s_orbitCam;
 static struct { u32 envmap, convolution; } s_textures;
 static u32 s_envCubeVao, s_envCubeVbo;
-static u32 s_objVao, s_objVbo, s_objNumVerts;
+static u32 s_objVao, s_objVbo, s_objEbo, s_objNumInds;
 static u32 s_envProg, s_iblProg;
 static struct { i32 modelViewProj, cubemap, gammaExp; } s_envShadUnifLocs;
 static struct { i32 camPos, model, modelViewProj, albedo, rough2, metallic, F0, convolutedEnv, lut; } s_iblUnifLocs;
@@ -81,6 +81,11 @@ bool test_iblPbr()
     s_orbitCam.heading = 0;
     s_orbitCam.pitch = 0;
     addOrbitCameraBaviour(window, s_orbitCam);
+    glfwSetKeyCallback(window, [](GLFWwindow* window, int key, int scanCode, int action, int mods)
+    {
+        if(key == GLFW_KEY_ESCAPE && action == GLFW_PRESS)
+            glfwSetWindowShouldClose(window, true);
+    });
 
     glEnable(GL_TEXTURE_CUBE_MAP_SEAMLESS);
     glEnable(GL_DEPTH_TEST);
@@ -130,10 +135,11 @@ bool test_iblPbr()
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, nullptr);
 
     // init object mesh
-    tg::createCubeMesh(s_objVao, s_objVbo, s_objNumVerts, true);
+    tg::createIcoSphereMesh(s_objVao, s_objVbo, s_objEbo, s_objNumInds, 4);
     defer(
         glDeleteVertexArrays(1, &s_objVao);
-        glDeleteBuffers(1, &s_objVao);
+        glDeleteBuffers(1, &s_objVbo);
+        glDeleteBuffers(1, &s_objEbo);
     );
 
     // init shaders
@@ -242,7 +248,7 @@ bool test_iblPbr()
         if(s_iblUnifLocs.convolutedEnv != -1)
             glUniform1i(s_iblUnifLocs.convolutedEnv, 1);
         glBindVertexArray(s_objVao);
-        glDrawArrays(GL_TRIANGLES, 0, 6*6);
+        glDrawElements(GL_TRIANGLES, s_objNumInds, GL_UNSIGNED_INT, nullptr);
 
         glfwSwapBuffers(window);
         glfwWaitEventsTimeout(0.01);
