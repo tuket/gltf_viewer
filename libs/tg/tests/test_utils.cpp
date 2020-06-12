@@ -50,11 +50,29 @@ GLFWwindow* simpleInitGlfwGL()
     return window;
 }
 
+void OrbitCameraInfo::applyMouseDrag(glm::vec2 deltaPixels, glm::vec2 screenSize)
+{
+    constexpr float speed = PI;
+    heading += speed * deltaPixels.x / screenSize.x;
+    while(heading < 0)
+        heading += 2*PI;
+    while(heading > 2*PI)
+        heading -= 2*PI;
+    pitch += speed * deltaPixels.y / screenSize.y;
+    pitch = glm::clamp(pitch, -0.45f*PI, +0.45f*PI);
+}
+
+void OrbitCameraInfo::applyMouseWheel(float dy)
+{
+    constexpr float speed = 1.04f;
+    distance *= pow(speed, (float)dy);
+    distance = glm::max(distance, 0.01f);
+}
 
 static bool mousePressed;
 static double prevMouseX, prevMouseY;
 static OrbitCameraInfo* s_orbitCamInfo = nullptr;
-void addOrbitCameraBaviour(GLFWwindow* window, OrbitCameraInfo& orbitCamInfo)
+void addSimpleOrbitCameraBaviour(GLFWwindow* window, OrbitCameraInfo& orbitCamInfo)
 {
     s_orbitCamInfo = &orbitCamInfo;
     mousePressed = false;
@@ -72,16 +90,9 @@ void addOrbitCameraBaviour(GLFWwindow* window, OrbitCameraInfo& orbitCamInfo)
         if(mousePressed) {
             const float dx = (float)x - prevMouseX;
             const float dy = (float)y - prevMouseY;
-            constexpr float speed = PI;
             int windowW, windowH;
             glfwGetWindowSize(window, &windowW, &windowH);
-            orbitCam.heading += speed * dx / windowW;
-            while(orbitCam.heading < 0)
-                orbitCam.heading += 2*PI;
-            while(orbitCam.heading > 2*PI)
-                orbitCam.heading -= 2*PI;
-            orbitCam.pitch += speed * dy / windowH;
-            orbitCam.pitch = glm::clamp(orbitCam.pitch, -0.45f*PI, +0.45f*PI);
+            orbitCam.applyMouseDrag({dx, dy}, {windowW, windowH});
         }
         prevMouseX = (float)x;
         prevMouseY = (float)y;
@@ -91,9 +102,7 @@ void addOrbitCameraBaviour(GLFWwindow* window, OrbitCameraInfo& orbitCamInfo)
     {
         assert(s_orbitCamInfo);
         auto& orbitCam = *s_orbitCamInfo;
-        constexpr float speed = 1.04f;
-        orbitCam.distance *= pow(speed, (float)dy);
-        orbitCam.distance = glm::max(orbitCam.distance, 0.01f);
+        orbitCam.applyMouseWheel(dy);
     };
 
     glfwSetMouseButtonCallback(window, onMouseClick);

@@ -12,8 +12,11 @@ extern char g_buffer[4*1024];
 struct OrbitCameraInfo {
     float heading, pitch;
     float distance;
+    void applyMouseDrag(glm::vec2 deltaPixels, glm::vec2 screenSize);
+    void applyMouseWheel(float dy);
 };
-void addOrbitCameraBaviour(GLFWwindow* window, OrbitCameraInfo& orbitCamInfo);
+
+void addSimpleOrbitCameraBaviour(GLFWwindow* window, OrbitCameraInfo& orbitCamInfo);
 
 extern const char g_cubemapVertShadSrc[];
 extern const char g_cubemapFragShadSrc[];

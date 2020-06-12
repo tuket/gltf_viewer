@@ -17,6 +17,8 @@
 #include <tg/cameras.hpp>
 
 static char s_buffer[4*1024];
+static bool s_mousePressed = false;
+static glm::vec2 s_prevMouse;
 static OrbitCameraInfo s_orbitCam;
 static struct { u32 envmap, convolution; } s_textures;
 static u32 s_envCubeVao, s_envCubeVbo;
@@ -112,11 +114,29 @@ bool test_iblPbr()
     s_orbitCam.distance = 10;
     s_orbitCam.heading = 0;
     s_orbitCam.pitch = 0;
-    addOrbitCameraBaviour(window, s_orbitCam);
-    glfwSetKeyCallback(window, [](GLFWwindow* window, int key, int scanCode, int action, int mods)
+    glfwSetKeyCallback(window, [](GLFWwindow* window, int key, int /*scanCode*/, int action, int /*mods*/)
     {
         if(key == GLFW_KEY_ESCAPE && action == GLFW_PRESS)
             glfwSetWindowShouldClose(window, true);
+    });
+    glfwSetMouseButtonCallback(window, [](GLFWwindow* /*window*/, int button, int action, int /*mods*/)
+    {
+        if(button == GLFW_MOUSE_BUTTON_1)
+                    s_mousePressed = action == GLFW_PRESS;
+    });
+    glfwSetCursorPosCallback(window, [](GLFWwindow* window, double x, double y)
+    {
+        if(s_mousePressed) {
+            const glm::vec2 d = glm::vec2{x, y} - s_prevMouse;
+            int windowW, windowH;
+            glfwGetWindowSize(window, &windowW, &windowH);
+            s_orbitCam.applyMouseDrag(d, {windowW, windowH});
+        }
+        s_prevMouse = {x, y};
+    });
+    glfwSetScrollCallback(window, [](GLFWwindow* /*window*/, double /*dx*/, double dy)
+    {
+        s_orbitCam.applyMouseWheel(dy);
     });
 
     glEnable(GL_TEXTURE_CUBE_MAP_SEAMLESS);

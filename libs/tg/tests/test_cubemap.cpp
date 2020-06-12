@@ -53,7 +53,7 @@ bool test_cubemap()
 
     s_orbitCam.heading = s_orbitCam.pitch = 0;
     s_orbitCam.distance = 4;
-    addOrbitCameraBaviour(window, s_orbitCam);
+    addSimpleOrbitCameraBaviour(window, s_orbitCam);
 
     u32 cubemapTextures[2];
     glGenTextures(2, cubemapTextures);
