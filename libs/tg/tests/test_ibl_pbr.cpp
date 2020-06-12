@@ -15,6 +15,9 @@
 #include <tg/mesh_utils.hpp>
 #include <tg/shader_utils.hpp>
 #include <tg/cameras.hpp>
+#include <imgui/imgui.h>
+#include <imgui/imgui_impl_glfw.h>
+#include <imgui/imgui_impl_opengl3.h>
 
 static GLFWcursor* s_splitterCursor = nullptr;
 static char s_buffer[4*1024];
@@ -124,8 +127,17 @@ void main()
 }
 )GLSL";
 
+static void drawGui()
+{
+    ImGui::Begin("giterator", 0, 0);
+    ImGui::SliderFloat("Roughness", &s_rough, 0, 1.f, "%.5f", 1);
+    ImGui::End();
+}
+
 static bool hoveringSplitter(GLFWwindow* window)
 {
+    if (ImGui::GetIO().WantCaptureMouse)
+        return false;
     int windowW, windowH;
     glfwGetWindowSize(window, &windowW, &windowH);
     const float splitterPixX = floorf(windowW * s_splitterPercent);
@@ -149,6 +161,11 @@ bool test_iblPbr()
     });
     glfwSetMouseButtonCallback(window, [](GLFWwindow* window, int button, int action, int /*mods*/)
     {
+        if (ImGui::GetIO().WantCaptureMouse) {
+            s_mousePressed = false;
+            s_draggingSplitter = false;
+            return;
+        }
         if(button == GLFW_MOUSE_BUTTON_1)
         {
             s_mousePressed = action == GLFW_PRESS;
@@ -175,8 +192,25 @@ bool test_iblPbr()
     });
     glfwSetScrollCallback(window, [](GLFWwindow* /*window*/, double /*dx*/, double dy)
     {
+        if (ImGui::GetIO().WantCaptureMouse)
+            return;
         s_orbitCam.applyMouseWheel(dy);
     });
+
+    {
+        ImGui::CreateContext();
+        ImGuiIO& io = ImGui::GetIO(); (void)io;
+        //io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
+        //io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
+
+        // Setup Dear ImGui style
+        ImGui::StyleColorsDark();
+        //ImGui::StyleColorsClassic();
+
+        // Setup Platform/Renderer bindings
+        ImGui_ImplGlfw_InitForOpenGL(window, true);
+        ImGui_ImplOpenGL3_Init();
+    }
 
     glEnable(GL_TEXTURE_CUBE_MAP_SEAMLESS);
     glEnable(GL_DEPTH_TEST);
@@ -333,6 +367,11 @@ bool test_iblPbr()
         glfwGetFramebufferSize(window, &screenW, &screenH);
         glViewport(0, 0, screenW, screenH);
 
+        ImGui_ImplOpenGL3_NewFrame();
+        ImGui_ImplGlfw_NewFrame();
+        ImGui::NewFrame();
+        drawGui();
+
         const float aspectRatio = float(screenW) / screenH;
         int splitterX = screenW * s_splitterPercent;
         splitterX = tl::max(0, splitterX - 1);
@@ -408,6 +447,9 @@ bool test_iblPbr()
             glClearColor(0, 1, 0, 1);
             glClear(GL_COLOR_BUFFER_BIT);
         }
+
+        ImGui::Render();
+        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
         glfwSwapBuffers(window);
         glfwWaitEventsTimeout(0.01);
