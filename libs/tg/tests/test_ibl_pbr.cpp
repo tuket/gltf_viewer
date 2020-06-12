@@ -125,7 +125,7 @@ bool test_iblPbr()
     s_splitterCursor = glfwCreateStandardCursor(GLFW_HRESIZE_CURSOR);
     defer(glfwDestroyCursor(s_splitterCursor));
 
-    s_orbitCam.distance = 10;
+    s_orbitCam.distance = 5;
     s_orbitCam.heading = 0;
     s_orbitCam.pitch = 0;
     glfwSetKeyCallback(window, [](GLFWwindow* window, int key, int /*scanCode*/, int action, int /*mods*/)
@@ -322,14 +322,31 @@ bool test_iblPbr()
         splitterX = tl::max(0, splitterX - 1);
         int splitterLineWidth = tl::min(1, screenW - splitterX);
 
-        // draw left part of the splitter
-        glScissor(0, 0, splitterX, screenH);
-
-        glClear(GL_DEPTH_BUFFER_BIT);
-
         const glm::mat4 viewMtx = tg::calcOrbitCameraMtx(s_orbitCam.heading, s_orbitCam.pitch, s_orbitCam.distance);
         const glm::mat4 projMtx = glm::perspective(glm::radians(45.f), aspectRatio, 0.1f, 1000.f);
 
+        auto uploadCommonUniforms = [&]()
+        {
+            const glm::mat4 viewProjMtx = projMtx * viewMtx;
+            const glm::mat4 modelMtx(1);
+            const glm::vec4 camPos4 = glm::affineInverse(viewMtx) * glm::vec4(0,0,0,1);
+            glUniform3fv(s_iblUnifLocs.camPos, 1, &camPos4[0]);
+            glUniformMatrix4fv(s_iblUnifLocs.model, 1, GL_FALSE, &modelMtx[0][0]);
+            glUniformMatrix4fv(s_iblUnifLocs.modelViewProj, 1, GL_FALSE, &viewProjMtx[0][0]);
+            const glm::vec3 albedo(0.5, 0.5, 0.5);
+            if(s_iblUnifLocs.albedo != -1)
+                glUniform3fv(s_iblUnifLocs.albedo, 1, &albedo[0]);
+            if(s_iblUnifLocs.rough2 != -1)
+                glUniform1f(s_iblUnifLocs.rough2, 0.2f);
+            const glm::vec3 ironF0(0.56f, 0.57f, 0.58f);
+            if(s_iblUnifLocs.F0 != -1)
+                glUniform3fv(s_iblUnifLocs.F0, 1, &ironF0[0]);
+            if(s_iblUnifLocs.convolutedEnv != -1)
+                glUniform1i(s_iblUnifLocs.convolutedEnv, 1);
+        };
+
+        // draw background
+        glClear(GL_DEPTH_BUFFER_BIT);
         glDisable(GL_DEPTH_TEST); // no reading, no writing
         {
             glm::mat4 viewMtxWithoutTranslation = viewMtx;
@@ -341,37 +358,31 @@ bool test_iblPbr()
             glDrawArrays(GL_TRIANGLES, 0, 6*6);
         }
 
+        glEnable(GL_SCISSOR_TEST);
         glEnable(GL_DEPTH_TEST);
-
-        const glm::mat4 viewProjMtx = projMtx * viewMtx;
-        const glm::mat4 modelMtx(1);
-        //glUseProgram(s_iblProg);
-        glUseProgram(s_rtProg);
-        const glm::vec4 camPos4 = glm::affineInverse(viewMtx) * glm::vec4(0,0,0,1);
-        glUniform3fv(s_iblUnifLocs.camPos, 1, &camPos4[0]);
-        glUniformMatrix4fv(s_iblUnifLocs.model, 1, GL_FALSE, &modelMtx[0][0]);
-        glUniformMatrix4fv(s_iblUnifLocs.modelViewProj, 1, GL_FALSE, &viewProjMtx[0][0]);
-        const glm::vec3 albedo(0.5, 0.5, 0.5);
-        if(s_iblUnifLocs.albedo != -1)
-            glUniform3fv(s_iblUnifLocs.albedo, 1, &albedo[0]);
-        if(s_iblUnifLocs.rough2 != -1)
-            glUniform1f(s_iblUnifLocs.rough2, 0.2f);
-        const glm::vec3 ironF0(0.56f, 0.57f, 0.58f);
-        if(s_iblUnifLocs.F0 != -1)
-            glUniform3fv(s_iblUnifLocs.F0, 1, &ironF0[0]);
-        if(s_iblUnifLocs.convolutedEnv != -1)
-            glUniform1i(s_iblUnifLocs.convolutedEnv, 1);
-        glBindVertexArray(s_objVao);
-        glDrawElements(GL_TRIANGLES, s_objNumInds, GL_UNSIGNED_INT, nullptr);
+        // draw left part of the splitter
+        {
+            glScissor(0, 0, splitterX, screenH);
+            glUseProgram(s_iblProg);
+            //glUseProgram(s_iblProg);
+            uploadCommonUniforms();
+            glBindVertexArray(s_objVao);
+            glDrawElements(GL_TRIANGLES, s_objNumInds, GL_UNSIGNED_INT, nullptr);
+        }
 
         // draw right side of the splitter
-        glScissor(splitterX+splitterLineWidth, 0, screenW - (splitterX+splitterLineWidth), screenH);
-        glClearColor(0, 0, 0, 1);
-        glClear(GL_COLOR_BUFFER_BIT);
+        {
+            glScissor(splitterX+splitterLineWidth, 0, screenW - (splitterX+splitterLineWidth), screenH);
+            glUseProgram(s_rtProg);
+            uploadCommonUniforms();
+            glBindVertexArray(s_objVao);
+            glDrawElements(GL_TRIANGLES, s_objNumInds, GL_UNSIGNED_INT, nullptr);
+            glClearColor(0, 0, 0, 1);
+            //glClear(GL_COLOR_BUFFER_BIT);
+        }
 
         // draw splitter line
         {
-            glEnable(GL_SCISSOR_TEST);
             glScissor(splitterX, 0, splitterLineWidth, screenH);
             glClearColor(0, 1, 0, 1);
             glClear(GL_COLOR_BUFFER_BIT);
