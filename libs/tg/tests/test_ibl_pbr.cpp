@@ -16,6 +16,7 @@
 #include <tg/shader_utils.hpp>
 #include <tg/cameras.hpp>
 
+static GLFWcursor* s_splitterCursor = nullptr;
 static char s_buffer[4*1024];
 static bool s_mousePressed = false;
 static glm::vec2 s_prevMouse;
@@ -29,6 +30,7 @@ struct CommonUnifLocs { i32 camPos, model, modelViewProj, albedo, rough2, metall
 static struct : public CommonUnifLocs {  } s_iblUnifLocs;
 static struct : public CommonUnifLocs { i32 numSamples; } s_rtUnifLocs;
 static float s_splitterPercent = 0.5;
+static bool s_draggingSplitter = false;
 
 static const char k_glslVersionSrc[] = "#version 330 core\n\n";
 
@@ -108,9 +110,21 @@ void main()
 }
 )GLSL";
 
+static bool hoveringSplitter(GLFWwindow* window)
+{
+    int windowW, windowH;
+    glfwGetWindowSize(window, &windowW, &windowH);
+    const float splitterPixX = floorf(windowW * s_splitterPercent);
+    return splitterPixX-1 <= s_prevMouse.x &&
+           s_prevMouse.x <= splitterPixX+1;
+}
+
 bool test_iblPbr()
 {
     GLFWwindow* window = simpleInitGlfwGL();
+    s_splitterCursor = glfwCreateStandardCursor(GLFW_HRESIZE_CURSOR);
+    defer(glfwDestroyCursor(s_splitterCursor));
+
     s_orbitCam.distance = 10;
     s_orbitCam.heading = 0;
     s_orbitCam.pitch = 0;
@@ -119,18 +133,29 @@ bool test_iblPbr()
         if(key == GLFW_KEY_ESCAPE && action == GLFW_PRESS)
             glfwSetWindowShouldClose(window, true);
     });
-    glfwSetMouseButtonCallback(window, [](GLFWwindow* /*window*/, int button, int action, int /*mods*/)
+    glfwSetMouseButtonCallback(window, [](GLFWwindow* window, int button, int action, int /*mods*/)
     {
         if(button == GLFW_MOUSE_BUTTON_1)
-                    s_mousePressed = action == GLFW_PRESS;
+        {
+            s_mousePressed = action == GLFW_PRESS;
+            s_draggingSplitter = s_mousePressed && hoveringSplitter(window);
+        }
     });
     glfwSetCursorPosCallback(window, [](GLFWwindow* window, double x, double y)
     {
         if(s_mousePressed) {
-            const glm::vec2 d = glm::vec2{x, y} - s_prevMouse;
             int windowW, windowH;
             glfwGetWindowSize(window, &windowW, &windowH);
-            s_orbitCam.applyMouseDrag(d, {windowW, windowH});
+            if(s_draggingSplitter) {
+                s_splitterPercent = x / float(windowW);
+            }
+            else {
+                const glm::vec2 d = glm::vec2{x, y} - s_prevMouse;
+                s_orbitCam.applyMouseDrag(d, {windowW, windowH});
+            }
+        }
+        else {
+            glfwSetCursor(window, hoveringSplitter(window) ? s_splitterCursor : nullptr);
         }
         s_prevMouse = {x, y};
     });
