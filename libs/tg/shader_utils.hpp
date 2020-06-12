@@ -12,4 +12,11 @@ char* getShaderLinkErrors(u32 prog, tl::Span<char> buffer);
 void createSimpleCubemapShader(u32& prog,
     i32& modelViewProjUnifLoc, i32& cubemapTexUnifLoc, i32& gammaExpUnifLoc);
 
+namespace srcs
+{
+extern const char* header;
+extern const char* hammersley;
+extern const char* importanceSampleGgxD;
+}
+
 }

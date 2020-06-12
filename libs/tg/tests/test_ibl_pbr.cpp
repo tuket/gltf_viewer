@@ -31,8 +31,7 @@ static struct : public CommonUnifLocs {  } s_iblUnifLocs;
 static struct : public CommonUnifLocs { i32 numSamples; } s_rtUnifLocs;
 static float s_splitterPercent = 0.5;
 static bool s_draggingSplitter = false;
-
-static const char k_glslVersionSrc[] = "#version 330 core\n\n";
+static float s_rough = 0.1f;
 
 static const char k_vertShadSrc[] =
 R"GLSL(
@@ -92,6 +91,7 @@ uniform float u_metallic;
 uniform vec3 u_F0;
 uniform samplerCube u_convolutedEnv;
 uniform sampler2D u_lut;
+uniform uint u_numSamples = 16u;
 
 in vec3 v_pos;
 in vec3 v_normal;
@@ -100,10 +100,24 @@ void main()
 {
     vec3 N = normalize(v_normal);
     vec3 V = normalize(u_camPos - v_pos);
+    vec3 color = vec3(0.0, 0.0, 0.0);
+    for(uint iSample = 0u; iSample < u_numSamples; iSample++)
+    {
+        vec2 seed2 = hammersleyVec2(iSample, u_numSamples);
+        vec3 H = importanceSampleGgxD(seed2, u_rough2, N);
+        vec3 L = reflect(-V, H);
+        vec3 env = textureLod(u_convolutedEnv, L, 0.0).rgb;
+        color += env;
+    }
+    color /= float(u_numSamples);
+    color = pow(color, vec3(1.0/2.2));
+    o_color = vec4(color, 1.0);
+
+    /*vec3 V = normalize(u_camPos - v_pos);
     vec3 L = reflect(-V, N);
     vec3 env = textureLod(u_convolutedEnv, L, 2.0).rgb;
         env = pow(env, vec3(1.0/2.2, 1.0/2.2, 1.0/2.2));
-    o_color = vec4(env, 1.0);
+    o_color = vec4(env, 1.0);*/
     //if(o_color.x < 10)
     //    o_color = vec4(0, 1, 1, 1);
     //o_color = vec4(normalize(N), 1.0);
@@ -115,8 +129,8 @@ static bool hoveringSplitter(GLFWwindow* window)
     int windowW, windowH;
     glfwGetWindowSize(window, &windowW, &windowH);
     const float splitterPixX = floorf(windowW * s_splitterPercent);
-    return splitterPixX-1 <= s_prevMouse.x &&
-           s_prevMouse.x <= splitterPixX+1;
+    return splitterPixX-2 <= s_prevMouse.x &&
+           s_prevMouse.x <= splitterPixX+2;
 }
 
 bool test_iblPbr()
@@ -147,16 +161,16 @@ bool test_iblPbr()
             int windowW, windowH;
             glfwGetWindowSize(window, &windowW, &windowH);
             if(s_draggingSplitter) {
-                s_splitterPercent = x / float(windowW);
+                x = tl::clamp(x, 0., double(windowW));
+                s_splitterPercent = x / double(windowW);
             }
             else {
                 const glm::vec2 d = glm::vec2{x, y} - s_prevMouse;
                 s_orbitCam.applyMouseDrag(d, {windowW, windowH});
             }
         }
-        else {
-            glfwSetCursor(window, hoveringSplitter(window) ? s_splitterCursor : nullptr);
-        }
+        const bool showSplitterCursor = s_draggingSplitter || hoveringSplitter(window);
+        glfwSetCursor(window, showSplitterCursor ? s_splitterCursor : nullptr);
         s_prevMouse = {x, y};
     });
     glfwSetScrollCallback(window, [](GLFWwindow* /*window*/, double /*dx*/, double dy)
@@ -230,9 +244,9 @@ bool test_iblPbr()
     s_iblProg = glCreateProgram();
     s_rtProg = glCreateProgram();
     {
-        const char* vertSrcs[] = { k_glslVersionSrc, k_vertShadSrc };
-        const char* fragSrcs[] = { k_glslVersionSrc, k_fragShadSrc };
-        const char* rtFragSrcs[] = { k_glslVersionSrc, k_rtFragShadSrc };
+        const char* vertSrcs[] = { tg::srcs::header, k_vertShadSrc };
+        const char* fragSrcs[] = { tg::srcs::header, k_fragShadSrc };
+        const char* rtFragSrcs[] = { tg::srcs::header, tg::srcs::hammersley, tg::srcs::importanceSampleGgxD, k_rtFragShadSrc };
         constexpr int numVertSrcs = tl::size(vertSrcs);
         constexpr int numFragSrcs = tl::size(fragSrcs);
         constexpr int numRtFragSrcs = tl::size(rtFragSrcs);
@@ -309,6 +323,8 @@ bool test_iblPbr()
     defer(glDeleteProgram(s_rtProg));
     defer(glDeleteProgram(s_iblProg));
 
+    glEnable(GL_SCISSOR_TEST);
+
     while(!glfwWindowShouldClose(window))
     {
         glfwPollEvents();
@@ -325,27 +341,30 @@ bool test_iblPbr()
         const glm::mat4 viewMtx = tg::calcOrbitCameraMtx(s_orbitCam.heading, s_orbitCam.pitch, s_orbitCam.distance);
         const glm::mat4 projMtx = glm::perspective(glm::radians(45.f), aspectRatio, 0.1f, 1000.f);
 
-        auto uploadCommonUniforms = [&]()
+        auto uploadCommonUniforms = [&](const CommonUnifLocs& unifLocs)
         {
             const glm::mat4 viewProjMtx = projMtx * viewMtx;
             const glm::mat4 modelMtx(1);
             const glm::vec4 camPos4 = glm::affineInverse(viewMtx) * glm::vec4(0,0,0,1);
-            glUniform3fv(s_iblUnifLocs.camPos, 1, &camPos4[0]);
-            glUniformMatrix4fv(s_iblUnifLocs.model, 1, GL_FALSE, &modelMtx[0][0]);
-            glUniformMatrix4fv(s_iblUnifLocs.modelViewProj, 1, GL_FALSE, &viewProjMtx[0][0]);
+            glUniform3fv(unifLocs.camPos, 1, &camPos4[0]);
+            glUniformMatrix4fv(unifLocs.model, 1, GL_FALSE, &modelMtx[0][0]);
+            glUniformMatrix4fv(unifLocs.modelViewProj, 1, GL_FALSE, &viewProjMtx[0][0]);
             const glm::vec3 albedo(0.5, 0.5, 0.5);
-            if(s_iblUnifLocs.albedo != -1)
-                glUniform3fv(s_iblUnifLocs.albedo, 1, &albedo[0]);
-            if(s_iblUnifLocs.rough2 != -1)
-                glUniform1f(s_iblUnifLocs.rough2, 0.2f);
+            if(unifLocs.albedo != -1)
+                glUniform3fv(unifLocs.albedo, 1, &albedo[0]);
+            if(unifLocs.rough2 != -1)
+                glUniform1f(unifLocs.rough2, s_rough*s_rough);
             const glm::vec3 ironF0(0.56f, 0.57f, 0.58f);
-            if(s_iblUnifLocs.F0 != -1)
-                glUniform3fv(s_iblUnifLocs.F0, 1, &ironF0[0]);
-            if(s_iblUnifLocs.convolutedEnv != -1)
-                glUniform1i(s_iblUnifLocs.convolutedEnv, 1);
+            if(unifLocs.F0 != -1)
+                glUniform3fv(unifLocs.F0, 1, &ironF0[0]);
+            if(unifLocs.convolutedEnv != -1)
+                glUniform1i(unifLocs.convolutedEnv, 1);
         };
 
         // draw background
+        //glEnable(GL_DEPTH_TEST);
+        //glDepthMask(GL_TRUE);
+        glScissor(0, 0, screenW, screenH);
         glClear(GL_DEPTH_BUFFER_BIT);
         glDisable(GL_DEPTH_TEST); // no reading, no writing
         {
@@ -358,26 +377,28 @@ bool test_iblPbr()
             glDrawArrays(GL_TRIANGLES, 0, 6*6);
         }
 
-        glEnable(GL_SCISSOR_TEST);
         glEnable(GL_DEPTH_TEST);
+        glDepthMask(GL_TRUE);
+        //glClear(GL_DEPTH_BUFFER_BIT);
         // draw left part of the splitter
         {
             glScissor(0, 0, splitterX, screenH);
             glUseProgram(s_iblProg);
-            //glUseProgram(s_iblProg);
-            uploadCommonUniforms();
+            uploadCommonUniforms(s_iblUnifLocs);
             glBindVertexArray(s_objVao);
             glDrawElements(GL_TRIANGLES, s_objNumInds, GL_UNSIGNED_INT, nullptr);
+            glClearColor(1, 0, 0, 1);
+            //glClear(GL_COLOR_BUFFER_BIT);
         }
 
         // draw right side of the splitter
         {
             glScissor(splitterX+splitterLineWidth, 0, screenW - (splitterX+splitterLineWidth), screenH);
             glUseProgram(s_rtProg);
-            uploadCommonUniforms();
+            uploadCommonUniforms(s_rtUnifLocs);
             glBindVertexArray(s_objVao);
             glDrawElements(GL_TRIANGLES, s_objNumInds, GL_UNSIGNED_INT, nullptr);
-            glClearColor(0, 0, 0, 1);
+            glClearColor(0, 0, 1, 1);
             //glClear(GL_COLOR_BUFFER_BIT);
         }
 

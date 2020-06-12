@@ -26,13 +26,6 @@ namespace tg
 
 // --- DATA ---------------------------------------------------------------------------------------
 
-static const char s_glslVersionSrc[] = "#version 330 core\n\n";
-
-static const char s_glslUtilsSrc[] =
-R"GLSL(
-const float PI = 3.14159265359;
-)GLSL";
-
 static const char s_filterCubemapSrc_vertShad[] =
 R"GLSL(
 layout (location = 0) in vec3 a_pos;
@@ -44,48 +37,6 @@ void main()
 {
     v_lobeDir = a_pos;
     gl_Position = vec4(vec2(2.0, -2.0)*a_tc-vec2(1.0, -1.0), 0.0, 1.0);
-}
-)GLSL";
-
-static const char s_hammersleyShadSrc[] =
-R"GLSL(
-vec2 hammersleyVec2(uint i, uint numSamples)
-{
-    uint b = (i << 16u) | (i >> 16u);
-    b = ((b & 0x55555555u) << 1u) | ((b & 0xAAAAAAAAu) >> 1u);
-    b = ((b & 0x33333333u) << 2u) | ((b & 0xCCCCCCCCu) >> 2u);
-    b = ((b & 0x0F0F0F0Fu) << 4u) | ((b & 0xF0F0F0F0u) >> 4u);
-    b = ((b & 0x00FF00FFu) << 8u) | ((b & 0xFF00FF00u) >> 8u);
-    float radicalInverseVDC = float(b) * 2.3283064365386963e-10;
-    return vec2(float(i) / float(numSamples), radicalInverseVDC);
-}
-)GLSL";
-
-static const char s_ggxImportanceSampleDSrc[] =
-R"GLSL(
-vec3 importanceSampleGgxD(vec2 seed, float rough2, vec3 N)
-{
-    float phi = 2.0 * PI * seed.x;
-    float cosTheta = sqrt((1.0 - seed.y) / (1 + (rough2*rough2 - 1) * seed.y));
-    float sinTheta = sqrt(1.0 - cosTheta*cosTheta);
-    /*vec3 h;
-    h.x = sinTheta * cos(phi);
-    h.y = sinTheta * sin(phi);
-    h.z = cosTheta;
-    vec3 up = abs(N.y) < 0.99 ? vec3(0, 1, 0) : vec3(1, 0, 0);
-    vec3 tangentX = normalize(cross(up, N));
-    vec3 tangentZ = cross(tangentX, N);
-    return h.x * tangentX + h.y * up + h.z * tangentZ;*/
-
-    vec3 H;
-    H.x = sinTheta * cos( phi );
-    H.y = sinTheta * sin( phi );
-    H.z = cosTheta;
-    vec3 UpVector = abs(N.z) < 0.999 ? vec3(0,0,1) : vec3(1,0,0);
-    vec3 TangentX = normalize( cross( UpVector , N ) );
-    vec3 TangentY = cross( N, TangentX );
-    // Tangent to world space
-    return TangentX * H.x + TangentY * H.y + N * H.z;
 }
 )GLSL";
 
@@ -233,7 +184,7 @@ static float s_filterCubemapVerts[6*6*(3+2)] = {
 u32 createFilterCubemapVertShader()
 {
     const u32 shad = glCreateShader(GL_VERTEX_SHADER);
-    const char* srcs[] = {s_glslVersionSrc, s_filterCubemapSrc_vertShad};
+    const char* srcs[] = {srcs::header, s_filterCubemapSrc_vertShad};
     constexpr int numSrcs = tl::size(srcs);
     i32 sizes[numSrcs];
     for(int i = 0; i < numSrcs; i++)
@@ -267,11 +218,10 @@ u32 createFilterCubemap_ggx_fragShader()
 {
     const u32 shad = glCreateShader(GL_FRAGMENT_SHADER);
     const char* srcs[] = {
-        s_glslVersionSrc,
-        s_glslUtilsSrc,
+        srcs::header,
         s_filterCubemapSrc_vars,
-        s_hammersleyShadSrc,
-        s_ggxImportanceSampleDSrc,
+        srcs::hammersley,
+        srcs::importanceSampleGgxD,
         s_ggxShadSrc,
     };
     constexpr int numSrcs = tl::size(srcs);
@@ -613,15 +563,13 @@ void uploadCubemapTexture(u32 mipLevel, u32 w, u32 h, u32 internalFormat, u32 da
 void createGgxLutTexShader(u32& prog, u32& vertShad, u32& fragShad, u32& numSamplesUnifLoc)
 {
     const char* vertSrcs[] = {
-        s_glslVersionSrc,
-        s_glslUtilsSrc,
+        srcs::header,
         s_simpleScreenQuadVertShadSrc
     };
     const char* fragSrcs[] = {
-        s_glslVersionSrc,
-        s_glslUtilsSrc,
-        s_hammersleyShadSrc,
-        s_ggxImportanceSampleDSrc,
+        srcs::header,
+        srcs::hammersley,
+        srcs::importanceSampleGgxD,
         s_ggxLutGenerateSrc_fragShad
     };
 

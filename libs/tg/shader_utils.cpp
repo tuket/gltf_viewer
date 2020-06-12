@@ -105,4 +105,58 @@ void createSimpleCubemapShader(u32& prog,
     gammaExpUnifLoc = glGetUniformLocation(prog, "u_gammaExponent");
 }
 
+namespace srcs
+{
+
+const char* header =
+R"GLSL(
+#version 330 core
+
+const float PI = 3.14159265359;
+)GLSL";
+
+const char* hammersley =
+R"GLSL(
+vec2 hammersleyVec2(uint i, uint numSamples)
+{
+    uint b = (i << 16u) | (i >> 16u);
+    b = ((b & 0x55555555u) << 1u) | ((b & 0xAAAAAAAAu) >> 1u);
+    b = ((b & 0x33333333u) << 2u) | ((b & 0xCCCCCCCCu) >> 2u);
+    b = ((b & 0x0F0F0F0Fu) << 4u) | ((b & 0xF0F0F0F0u) >> 4u);
+    b = ((b & 0x00FF00FFu) << 8u) | ((b & 0xFF00FF00u) >> 8u);
+    float radicalInverseVDC = float(b) * 2.3283064365386963e-10;
+    return vec2(float(i) / float(numSamples), radicalInverseVDC);
+}
+)GLSL";
+
+const char* importanceSampleGgxD =
+R"GLSL(
+vec3 importanceSampleGgxD(vec2 seed, float rough2, vec3 N)
+{
+    float phi = 2.0 * PI * seed.x;
+    float cosTheta = sqrt((1.0 - seed.y) / (1 + (rough2*rough2 - 1) * seed.y));
+    float sinTheta = sqrt(1.0 - cosTheta*cosTheta);
+    /*vec3 h;
+    h.x = sinTheta * cos(phi);
+    h.y = sinTheta * sin(phi);
+    h.z = cosTheta;
+    vec3 up = abs(N.y) < 0.99 ? vec3(0, 1, 0) : vec3(1, 0, 0);
+    vec3 tangentX = normalize(cross(up, N));
+    vec3 tangentZ = cross(tangentX, N);
+    return h.x * tangentX + h.y * up + h.z * tangentZ;*/
+
+    vec3 H;
+    H.x = sinTheta * cos( phi );
+    H.y = sinTheta * sin( phi );
+    H.z = cosTheta;
+    vec3 UpVector = abs(N.z) < 0.999 ? vec3(0,0,1) : vec3(1,0,0);
+    vec3 TangentX = normalize( cross( UpVector , N ) );
+    vec3 TangentY = cross( N, TangentX );
+    // Tangent to world space
+    return TangentX * H.x + TangentY * H.y + N * H.z;
+}
+)GLSL";
+
+}
+
 }
