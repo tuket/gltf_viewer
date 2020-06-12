@@ -316,8 +316,14 @@ bool test_iblPbr()
         int screenW, screenH;
         glfwGetFramebufferSize(window, &screenW, &screenH);
         glViewport(0, 0, screenW, screenH);
-        glScissor(0, 0, screenW, screenH);
+
         const float aspectRatio = float(screenW) / screenH;
+        int splitterX = screenW * s_splitterPercent;
+        splitterX = tl::max(0, splitterX - 1);
+        int splitterLineWidth = tl::min(1, screenW - splitterX);
+
+        // draw left part of the splitter
+        glScissor(0, 0, splitterX, screenH);
 
         glClear(GL_DEPTH_BUFFER_BIT);
 
@@ -358,13 +364,15 @@ bool test_iblPbr()
         glBindVertexArray(s_objVao);
         glDrawElements(GL_TRIANGLES, s_objNumInds, GL_UNSIGNED_INT, nullptr);
 
+        // draw right side of the splitter
+        glScissor(splitterX+splitterLineWidth, 0, screenW - (splitterX+splitterLineWidth), screenH);
+        glClearColor(0, 0, 0, 1);
+        glClear(GL_COLOR_BUFFER_BIT);
+
         // draw splitter line
         {
             glEnable(GL_SCISSOR_TEST);
-            int x0 = screenW * s_splitterPercent;
-            x0 = tl::max(0, x0 - 1);
-            int lineWidth = tl::min(1, screenW - x0);
-            glScissor(x0, 0, lineWidth, screenH);
+            glScissor(splitterX, 0, splitterLineWidth, screenH);
             glClearColor(0, 1, 0, 1);
             glClear(GL_COLOR_BUFFER_BIT);
         }
