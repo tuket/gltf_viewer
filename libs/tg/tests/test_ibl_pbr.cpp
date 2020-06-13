@@ -35,6 +35,7 @@ static struct : public CommonUnifLocs { i32 numSamples; } s_rtUnifLocs;
 static float s_splitterPercent = 0.5;
 static bool s_draggingSplitter = false;
 static float s_rough = 0.1f;
+static u32 s_numSamples = 16;
 
 static const char k_vertShadSrc[] =
 R"GLSL(
@@ -131,6 +132,12 @@ static void drawGui()
 {
     ImGui::Begin("giterator", 0, 0);
     ImGui::SliderFloat("Roughness", &s_rough, 0, 1.f, "%.5f", 1);
+    {
+        int numSamples = s_numSamples;
+        constexpr int maxSamples = 1024;
+        ImGui::SliderInt("Samples", &numSamples, 1, maxSamples);
+        s_numSamples = tl::clamp(numSamples, 1, maxSamples);
+    }
     ImGui::End();
 }
 
@@ -187,7 +194,13 @@ bool test_iblPbr()
             }
         }
         const bool showSplitterCursor = s_draggingSplitter || hoveringSplitter(window);
-        glfwSetCursor(window, showSplitterCursor ? s_splitterCursor : nullptr);
+        if(showSplitterCursor) {
+            ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
+            glfwSetCursor(window, s_splitterCursor);
+        }
+        else {
+            ImGui::GetIO().ConfigFlags &= ~ImGuiConfigFlags_NoMouseCursorChange;
+        }
         s_prevMouse = {x, y};
     });
     glfwSetScrollCallback(window, [](GLFWwindow* /*window*/, double /*dx*/, double dy)
@@ -200,6 +213,7 @@ bool test_iblPbr()
     {
         ImGui::CreateContext();
         ImGuiIO& io = ImGui::GetIO(); (void)io;
+        //io.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
         //io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
         //io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
 
@@ -435,6 +449,7 @@ bool test_iblPbr()
             glScissor(splitterX+splitterLineWidth, 0, screenW - (splitterX+splitterLineWidth), screenH);
             glUseProgram(s_rtProg);
             uploadCommonUniforms(s_rtUnifLocs);
+            glUniform1ui(s_rtUnifLocs.numSamples, s_numSamples);
             glBindVertexArray(s_objVao);
             glDrawElements(GL_TRIANGLES, s_objNumInds, GL_UNSIGNED_INT, nullptr);
             glClearColor(0, 0, 1, 1);
