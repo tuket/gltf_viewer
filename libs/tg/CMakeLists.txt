@@ -35,4 +35,5 @@ target_link_libraries(tg_tests
 	glm
 	tl
 	tg
+	imgui
 )

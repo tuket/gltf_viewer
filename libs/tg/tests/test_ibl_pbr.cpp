@@ -31,11 +31,16 @@ static u32 s_envProg, s_iblProg, s_rtProg;
 static struct { i32 modelViewProj, cubemap, gammaExp; } s_envShadUnifLocs;
 struct CommonUnifLocs { i32 camPos, model, modelViewProj, albedo, rough2, metallic, F0, convolutedEnv, lut; };
 static struct : public CommonUnifLocs {  } s_iblUnifLocs;
-static struct : public CommonUnifLocs { i32 numSamples; } s_rtUnifLocs;
+static struct : public CommonUnifLocs { i32 numSamples, fresnelTerm, geomTerm, test; } s_rtUnifLocs;
 static float s_splitterPercent = 0.5;
 static bool s_draggingSplitter = false;
 static float s_rough = 0.1f;
 static u32 s_numSamples = 16;
+static glm::vec3 s_albedo = {0.8f, 0.8f, 0.8f};
+static float s_metallic = 0.99f;
+static float s_enableFresnelTerm = 1;
+static float s_enableGeomTerm = 1;
+static float s_testUnif = 0;
 
 static const char k_vertShadSrc[] =
 R"GLSL(
@@ -97,34 +102,84 @@ uniform samplerCube u_convolutedEnv;
 uniform sampler2D u_lut;
 uniform uint u_numSamples = 16u;
 
+uniform float u_fresnelTerm;
+uniform float u_geomTerm;
+uniform float u_testUnif;
+
 in vec3 v_pos;
 in vec3 v_normal;
+
+vec3 fresnelSchlick(float NoV, vec3 F0)
+{
+    return F0 + (1.0 - F0) * pow(1.0 - NoV, 5.0);
+}
+
+/*float GeometrySchlickGGX(float NdotV, float roughness)
+{
+    float r = (roughness + 1.0);
+    float k = (r*r) / 8.0;
+
+    float num   = NdotV;
+    float denom = NdotV * (1.0 - k) + k;
+
+    return num / denom;
+}*/
+
+/*float ggx_G1_smith(float NoV, float rough2)
+{
+    float rough4 = rough2 * rough2;
+        rough4 = mix(rough2, rough4, u_testUnif);
+        return u_testUnif;
+    return 1.0 / (
+        NoV + sqrt(rough4 + (1 - rough4) * NoV*NoV)
+    );
+}*/
+
+float ggx_G_smith(float NoV, float NoL, float rough2)
+{
+    float k = rough2*rough2 * 0.5;
+    float lightAtten = (NoL / ((NoL * (1.0 - k)) + k));
+    float viewAtten  = (NoV / ((NoV* (1.0 - k)) + k));
+    float approx = lightAtten * viewAtten;
+        return approx;
+
+    float rough4 = mix(rough2, rough2 * rough2, u_testUnif);
+    float ggx1_inv = NoV + /*sqrt*/( (NoV - NoV * rough4) * NoV + rough4 );
+    float ggx2_inv = NoL + /*sqrt*/( (NoL - NoL * rough4) * NoL + rough4 );
+    //float ggx1_inv = NoV + sqrt(rough4 + (1.0 - rough4) * NoV*NoV);
+    //float ggx2_inv = NoL + sqrt(rough4 + (1.0 - rough4) * NoL*NoL);
+    float correct = 1.0 / (ggx1_inv * ggx2_inv);
+        return mix(approx, correct, 1.0);
+}
 
 void main()
 {
     vec3 N = normalize(v_normal);
     vec3 V = normalize(u_camPos - v_pos);
-    vec3 color = vec3(0.0, 0.0, 0.0);
+    float NoV = max(0.0001, dot(N, V));
+
+    vec3 F0 = mix(vec3(0.04), u_albedo, u_metallic);
+    vec3 F = fresnelSchlick(NoV, F0);
+        F = mix(vec3(1.0), F, u_fresnelTerm);
+    vec3 k_spec = F;
+    vec3 k_diff = (1 - k_spec) * (1 - u_metallic);
+
+    vec3 specular = vec3(0.0, 0.0, 0.0);
     for(uint iSample = 0u; iSample < u_numSamples; iSample++)
     {
         vec2 seed2 = hammersleyVec2(iSample, u_numSamples);
         vec3 H = importanceSampleGgxD(seed2, u_rough2, N);
         vec3 L = reflect(-V, H);
         vec3 env = textureLod(u_convolutedEnv, L, 0.0).rgb;
-        color += env;
+        float NoL = max(0.0001, dot(N, L));
+        float G = ggx_G_smith(NoV, NoL, u_rough2);
+            G = mix(1.0, G, u_geomTerm);
+        specular += env*F*G*NoL;
     }
-    color /= float(u_numSamples);
-    color = pow(color, vec3(1.0/2.2));
-    o_color = vec4(color, 1.0);
+    specular /= float(u_numSamples);
 
-    /*vec3 V = normalize(u_camPos - v_pos);
-    vec3 L = reflect(-V, N);
-    vec3 env = textureLod(u_convolutedEnv, L, 2.0).rgb;
-        env = pow(env, vec3(1.0/2.2, 1.0/2.2, 1.0/2.2));
-    o_color = vec4(env, 1.0);*/
-    //if(o_color.x < 10)
-    //    o_color = vec4(0, 1, 1, 1);
-    //o_color = vec4(normalize(N), 1.0);
+    vec3 color = pow(specular, vec3(1.0/2.2));
+    o_color = vec4(color, 1.0);
 }
 )GLSL";
 
@@ -137,6 +192,11 @@ static void drawGui()
         constexpr int maxSamples = 1024;
         ImGui::SliderInt("Samples", &numSamples, 1, maxSamples);
         s_numSamples = tl::clamp(numSamples, 1, maxSamples);
+        ImGui::ColorEdit3("Albedo", &s_albedo[0]);
+        ImGui::SliderFloat("Metallic", &s_metallic, 0.f, 1.f);
+        ImGui::SliderFloat("Enable fresnel term", &s_enableFresnelTerm, 0, 1);
+        ImGui::SliderFloat("Enable geom term", &s_enableGeomTerm, 0, 1);
+        ImGui::SliderFloat("Test", &s_testUnif, 0, 1);
     }
     ImGui::End();
 }
@@ -213,7 +273,6 @@ bool test_iblPbr()
     {
         ImGui::CreateContext();
         ImGuiIO& io = ImGui::GetIO(); (void)io;
-        //io.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
         //io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
         //io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
 
@@ -366,6 +425,9 @@ bool test_iblPbr()
                 };
             }
             s_rtUnifLocs.numSamples = glGetUniformLocation(s_rtProg, "u_numSamples");
+            s_rtUnifLocs.fresnelTerm = glGetUniformLocation(s_rtProg, "u_fresnelTerm");
+            s_rtUnifLocs.geomTerm = glGetUniformLocation(s_rtProg, "u_geomTerm");
+            s_rtUnifLocs.test = glGetUniformLocation(s_rtProg, "u_testUnif");
         }
     }
     defer(glDeleteProgram(s_rtProg));
@@ -402,11 +464,12 @@ bool test_iblPbr()
             glUniform3fv(unifLocs.camPos, 1, &camPos4[0]);
             glUniformMatrix4fv(unifLocs.model, 1, GL_FALSE, &modelMtx[0][0]);
             glUniformMatrix4fv(unifLocs.modelViewProj, 1, GL_FALSE, &viewProjMtx[0][0]);
-            const glm::vec3 albedo(0.5, 0.5, 0.5);
             if(unifLocs.albedo != -1)
-                glUniform3fv(unifLocs.albedo, 1, &albedo[0]);
+                glUniform3fv(unifLocs.albedo, 1, &s_albedo[0]);
             if(unifLocs.rough2 != -1)
                 glUniform1f(unifLocs.rough2, s_rough*s_rough);
+            if(unifLocs.metallic != -1)
+                glUniform1f(unifLocs.metallic, s_metallic);
             const glm::vec3 ironF0(0.56f, 0.57f, 0.58f);
             if(unifLocs.F0 != -1)
                 glUniform3fv(unifLocs.F0, 1, &ironF0[0]);
@@ -450,6 +513,12 @@ bool test_iblPbr()
             glUseProgram(s_rtProg);
             uploadCommonUniforms(s_rtUnifLocs);
             glUniform1ui(s_rtUnifLocs.numSamples, s_numSamples);
+            if(s_rtUnifLocs.fresnelTerm != -1)
+                glUniform1f(s_rtUnifLocs.fresnelTerm, s_enableFresnelTerm);
+            if(s_rtUnifLocs.geomTerm != -1)
+                glUniform1f(s_rtUnifLocs.geomTerm, s_enableGeomTerm);
+            if(s_rtUnifLocs.test != -1)
+                glUniform1f(s_rtUnifLocs.test, s_testUnif);
             glBindVertexArray(s_objVao);
             glDrawElements(GL_TRIANGLES, s_objNumInds, GL_UNSIGNED_INT, nullptr);
             glClearColor(0, 0, 1, 1);
