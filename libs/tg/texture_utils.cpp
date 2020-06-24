@@ -26,6 +26,31 @@ namespace tg
 
 // --- DATA ---------------------------------------------------------------------------------------
 
+static const char s_filterFullscreenSrc_vertShad[] =
+R"GLSL(
+layout (location = 0) in vec3 a_pos;
+
+void main()
+{
+    v_tc = 0.5 * (a_pos + 1.0;
+    gl_Position = vec3(a_pos, 0.0, 1.0);
+}
+)GLSL";
+
+static const char s_filterNothing_fragShad[] =
+R"GLSL(
+layout(location = 0) out vec4 o_color;
+
+uniform sampler2D u_texture;
+
+in vec3 v_tc;
+
+void main()
+{
+    o_color = texture(u_cubemap, v_tc);
+}
+)GLSL";
+
 static const char s_filterCubemapSrc_vertShad[] =
 R"GLSL(
 layout (location = 0) in vec3 a_pos;
@@ -181,6 +206,25 @@ static float s_filterCubemapVerts[6*6*(3+2)] = {
 
 // --- CODE -------------------------------------------------------------------------------------------------------------
 
+u32 createFilterFullscreenVertShader()
+{
+    const u32 shad = glCreateShader(GL_VERTEX_SHADER);
+    const char* srcs[] = {srcs::header, s_filterFullscreenSrc_vertShad};
+    constexpr int numSrcs = tl::size(srcs);
+    i32 sizes[numSrcs];
+    for(int i = 0; i < numSrcs; i++)
+        sizes[i] = strlen(srcs[i]);
+    glShaderSource(shad, numSrcs, srcs, sizes);
+    glCompileShader(shad);
+    if(const char* errorMsg = getShaderCompileErrors(shad, s_buffer))
+    {
+        fprintf(stderr, "Error compiling(createFilterFullscreenVertShader): %s\n", errorMsg);
+        glDeleteShader(shad);
+        return 0;
+    }
+    return shad;
+}
+
 u32 createFilterCubemapVertShader()
 {
     const u32 shad = glCreateShader(GL_VERTEX_SHADER);
@@ -214,17 +258,10 @@ void createFilterCubemapMeshGpu(u32& vao, u32& vbo, u32& numVerts)
     glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5*sizeof(float), (void*)(3*sizeof(float)));
 }
 
-u32 createFilterCubemap_ggx_fragShader()
+template <int numSrcs>
+static u32 createFragShaderCommon(const char* (&srcs)[numSrcs], const char* shaderName)
 {
     const u32 shad = glCreateShader(GL_FRAGMENT_SHADER);
-    const char* srcs[] = {
-        srcs::header,
-        s_filterCubemapSrc_vars,
-        srcs::hammersley,
-        srcs::importanceSampleGgxD,
-        s_ggxShadSrc,
-    };
-    constexpr int numSrcs = tl::size(srcs);
     int sizes[numSrcs];
     for(int i = 0; i < numSrcs; i++)
         sizes[i] = strlen(srcs[i]);
@@ -232,11 +269,32 @@ u32 createFilterCubemap_ggx_fragShader()
     glCompileShader(shad);
     if(const char* errorMsg = getShaderCompileErrors(shad, s_buffer))
     {
-        fprintf(stderr, "Error compiling(createFilterCubemapFragShader_GGX): \n%s", errorMsg);
+        fprintf(stderr, "Error compiling(%s): \n%s", shaderName, errorMsg);
         glDeleteShader(shad);
         return 0;
     }
     return shad;
+}
+
+u32 createFilterNothingFragShader()
+{
+    const char* srcs[] = {
+        srcs::header,
+        s_filterNothing_fragShad,
+    };
+    return createFragShaderCommon(srcs, "downscaleFragShader");
+}
+
+u32 createFilterCubemap_ggx_fragShader()
+{
+    const char* srcs[] = {
+        srcs::header,
+        s_filterCubemapSrc_vars,
+        srcs::hammersley,
+        srcs::importanceSampleGgxD,
+        s_ggxShadSrc,
+    };
+    return createFragShaderCommon(srcs, "downscaleFragShader");
 }
 
 GgxFilterUnifLocs getFilterCubamap_ggx_unifLocs(u32 prog)
@@ -247,124 +305,6 @@ GgxFilterUnifLocs getFilterCubamap_ggx_unifLocs(u32 prog)
     locs.roughness2 = glGetUniformLocation(prog, "u_rough2");
     assert(locs.cubemap != -1 && locs.numSamples != -1 && locs.roughness2 != -1);
     return locs;
-}
-
-void filterCubemap_GGX(tl::FVector<Img3f, 16>& outMips,
-    ImgView3f inImg,
-    u32 shaderProg,
-    u32 vao,
-    const GgxFilterUnifLocs& locs)
-{
-    constexpr int numSamples = 500;
-    const int sidePixels = tl::min(inImg.width() / 4, inImg.height() / 3);
-    int numMips = 0;
-    for(int px = sidePixels/2; px; px /= 2)
-        numMips++;
-    assert(numMips <= 16);
-    outMips.resize(numMips);
-
-
-    u32 inTex;
-    glGenTextures(1, &inTex);
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_CUBE_MAP, inTex);
-    tg::simpleInitCubemapTexture();
-    tg::uploadCubemapTexture(0, 4*sidePixels, 3*sidePixels, GL_RGB16F, GL_RGB, GL_FLOAT, (u8*)inImg.data());
-
-    glBindVertexArray(vao);
-    glUseProgram(shaderProg);
-    glUniform1i(locs.cubemap, 0);
-    glUniform1ui(locs.numSamples, numSamples);
-
-    u32 framebuffer;
-    u32 outTex, rbo;
-    glGenFramebuffers(1, &framebuffer);
-    glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
-    constexpr bool useRenderBufferOut = true;
-    if constexpr(useRenderBufferOut) {
-        glGenRenderbuffers(1, &rbo);
-        glBindRenderbuffer(GL_RENDERBUFFER, rbo);
-        glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, rbo);
-        glRenderbufferStorage(GL_RENDERBUFFER, GL_RGB16F, 4*sidePixels, 3*sidePixels);
-    }
-    else {
-        glActiveTexture(GL_TEXTURE1);
-        glGenTextures(1, &outTex);
-        glBindTexture(GL_TEXTURE_2D, outTex);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB16F, 4*sidePixels, 3*sidePixels, 0, GL_RGB, GL_FLOAT, nullptr);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, outTex, 0);
-    }
-    assert(glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE);
-    glReadBuffer(GL_COLOR_ATTACHMENT0);
-    glClearColor(0,0,0,1);
-
-    int mipSidePixels = sidePixels;
-    for(int iMip = 0; iMip < numMips; iMip++)
-    {
-        const float roughness = float(iMip+1) / numMips;
-        const float roughness2 = powf(roughness, 3.f);
-        glUniform1f(locs.roughness2, roughness2);
-        mipSidePixels /= 2;
-        const int w = 4 * mipSidePixels;
-        const int h = 3 * mipSidePixels;
-        /*struct FaceZone {i32 x, y, w, h;};
-        static const FaceZone faceZones[] = {
-            {0*mipSidePixels, 1*mipSidePixels, mipSidePixels, mipSidePixels}, // LEFT
-            {2*mipSidePixels, 1*mipSidePixels, mipSidePixels, mipSidePixels}, // RIGHT
-            {1*mipSidePixels, 2*mipSidePixels, mipSidePixels, mipSidePixels}, // DOWN
-            {1*mipSidePixels, 0*mipSidePixels, mipSidePixels, mipSidePixels}, // UP
-            {1*mipSidePixels, 1*mipSidePixels, mipSidePixels, mipSidePixels}, // FRONT
-            {3*mipSidePixels, 1*mipSidePixels, mipSidePixels, mipSidePixels}, // BACK
-        };*/
-        //const FaceZone& fz = faceZones[i];
-        glViewport(0, 0, w, h);
-        glScissor(0, 0, w, h);
-        glClear(GL_COLOR_BUFFER_BIT);
-        glDrawArrays(GL_TRIANGLES, 0, 36);
-        outMips[iMip] = Img3f(w, h);
-        glReadPixels(0, 0, w, h, GL_RGB, GL_FLOAT, outMips[iMip].data());
-    }
-
-    if constexpr(useRenderBufferOut)
-        glDeleteRenderbuffers(1, &rbo);
-    else
-        glDeleteTextures(1, &outTex);
-    glDeleteFramebuffers(1, &framebuffer);
-}
-
-FilterCubemapError filterCubemap_GGX(const char* inImgFileName,
-    const char* outImgFileNamePrefix, const char* outImgExtension,
-    u32 shaderProg,
-    u32 vao,
-    const tg::GgxFilterUnifLocs& locs)
-{
-    Img3f inImg = Img3f::load(inImgFileName);
-    if(!inImg.data())
-        return FilterCubemapError::CANT_OPEN_INPUT_FILE;
-
-    const int w = inImg.width();
-    const int h = inImg.height();
-    const int sidePixelsAcordingToW = w / 4;
-    const int sidePixelsAccordingToH = h / 3;
-    if(sidePixelsAcordingToW != sidePixelsAccordingToH) {
-        fprintf(stderr, "%s has a weird aspect ratio for a cubemap\n", inImgFileName);
-    }
-
-    tl::toStringBuffer(s_buffer, outImgFileNamePrefix, 0, outImgExtension);
-    if(!inImg.save(s_buffer))
-        return FilterCubemapError::CANT_OPEN_OUTPUT_FILE;
-
-    tl::FVector<Img3f, 16> outMips;
-    filterCubemap_GGX(outMips, inImg, shaderProg, vao, locs);
-    for(size_t i = 0; i < outMips.size(); i++) {
-        tl::toStringBuffer(s_buffer, outImgFileNamePrefix, i+1, outImgExtension);
-        if(!outMips[i].save(s_buffer))
-            return FilterCubemapError::CANT_OPEN_OUTPUT_FILE;
-    }
-
-    return FilterCubemapError::NONE;
 }
 
 /* The points in q must be in counter-clock-wise order */
@@ -558,6 +498,11 @@ void uploadCubemapTexture(u32 mipLevel, u32 w, u32 h, u32 internalFormat, u32 da
     upload(GL_TEXTURE_CUBE_MAP_POSITIVE_Y, ps * side);
     upload(GL_TEXTURE_CUBE_MAP_NEGATIVE_Z, ps * (w*side + 3*side));
     upload(GL_TEXTURE_CUBE_MAP_POSITIVE_Z, ps * (w*side + side));
+}
+
+u32 downscaledTexture(u32 inTex, u32 inW, u32 inH, u32 outW, u32 outH)
+{
+
 }
 
 void createGgxLutTexShader(u32& prog, u32& vertShad, u32& fragShad, u32& numSamplesUnifLoc)

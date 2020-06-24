@@ -6,7 +6,7 @@
 //bool test_segmentIntersect();
 bool test_cylinderMapToCubeMap();
 bool test_cubemap();
-bool test_ggxConvolution();
+bool test_filterNothing();
 bool test_generateGgxLut();
 bool test_iblPbr();
 
@@ -18,7 +18,7 @@ struct TestInfo {
 static TestInfo tests[] = {
     {"cylinderMapToCubeMap", test_cylinderMapToCubeMap},
     {"cubemap", test_cubemap},
-    {"ggxConvolution", test_ggxConvolution},
+    {"filterNothing", test_filterNothing},
     {"generateGgxLut", test_generateGgxLut},
     {"iblPbr", test_iblPbr}
 };

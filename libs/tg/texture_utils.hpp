@@ -31,28 +31,17 @@ enum class FilterCubemapError {
          +---------+
 */
 
-
+u32 createFilterFullscreenVertShader();
 u32 createFilterCubemapVertShader();
 void createFilterCubemapMeshGpu(u32& vao, u32& vbo, u32& numVerts);
+
+u32 createFilterNothingFragShader(); // this is a texture filter that does nothing (it's useful for downscaling textures if you turn on linear interpolation)
 
 struct GgxFilterUnifLocs {
     i32 cubemap, numSamples, roughness2;
 };
 u32 createFilterCubemap_ggx_fragShader();
 GgxFilterUnifLocs getFilterCubamap_ggx_unifLocs(u32 prog);
-
-
-void filterCubemap_GGX(tl::FVector<Img3f, 16>& outMips,
-    ImgView3f inImg,
-    u32 shaderProg, // create with createFilterCubemapVertShader()
-    u32 cubemapMeshVao, // create with createFilterCubemapMeshGpu();
-    const GgxFilterUnifLocs& locs);
-
-FilterCubemapError filterCubemap_GGX(const char* inImgFileName,
-    const char* outImgFileNamePrefix, const char* outImgExtension,
-    u32 shaderProg, // create with createFilterCubemapVertShader()
-    u32 filterCubemapMeshVao, // create with createFilterCubemapMeshGpu();
-    const GgxFilterUnifLocs& locs);
 
 void cylinderMapToCubeMap(CubeImgView3f cube, CImg3f cylindricMap);
 

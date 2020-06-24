@@ -59,30 +59,71 @@ bool filterCubemap()
     auto window = initGlfwGL();
     defer(glfwTerminate());
 
-    const u32 vertShader = tg::createFilterCubemapVertShader();
-    const u32 fragShader = tg::createFilterCubemap_ggx_fragShader();
-    const u32 prog = glCreateProgram();
-    glAttachShader(prog, vertShader);
-    glAttachShader(prog, fragShader);
-    glLinkProgram(prog);
-    if(const char* errMsg = tg::getShaderLinkErrors(prog, s_buffer)) {
-        tl::println("Error linking shader:\n", errMsg);
-        return false;
+    // load the image
+    auto inImg = tg::Img3f::load("autumn_cube.hdr");
+    u32 inTex;
+    glGenTextures(1, &inTex);
+    defer(glDeleteTextures(1, &inTex));
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_CUBE_MAP, inTex);
+    tg::simpleInitCubemapTexture();
+    int sidePixels = inImg.width() / 4;
+    assert(sidePixels == inImg.height() / 3);
+    tg::uploadCubemapTexture(0, inImg.width(), inImg.height(), GL_RGB, GL_RGB, GL_FLOAT, (u8*)inImg.data());
+
+    const u32 ggxFilterProg = glCreateProgram();
+    {
+        const u32 vertShader = tg::createFilterCubemapVertShader();
+        defer(glDeleteShader(vertShader));
+        const u32 fragShader = tg::createFilterCubemap_ggx_fragShader();
+        defer(glDeleteShader(fragShader));
+        glAttachShader(ggxFilterProg, vertShader);
+        glAttachShader(ggxFilterProg, fragShader);
+        glLinkProgram(ggxFilterProg);
+        if(const char* errMsg = tg::getShaderLinkErrors(ggxFilterProg, s_buffer)) {
+            tl::println("Error linking shader:\n", errMsg);
+            return false;
+        }
     }
-    const tg::GgxFilterUnifLocs unifLocs = tg::getFilterCubamap_ggx_unifLocs(prog);
+    defer(glDeleteProgram(ggxFilterProg));
+    const tg::GgxFilterUnifLocs ggxFilterUnifLocs = tg::getFilterCubamap_ggx_unifLocs(ggxFilterProg);
+
     u32 vao, vbo, numVerts;
     tg::createFilterCubemapMeshGpu(vao, vbo, numVerts);
-    auto error = tg::filterCubemap_GGX(
-        "test.hdr",
-        "autumn_ggx_", ".hdr",
-        prog, vao, unifLocs);
-    if(error == tg::FilterCubemapError::CANT_OPEN_INPUT_FILE) {
-        tl::println("Error: could not open input file");
-    }
-    else if(error == tg::FilterCubemapError::CANT_OPEN_OUTPUT_FILE){
-        tl::println("Error: could not write to output files");
-    }
-    return error != tg::FilterCubemapError::NONE;
+
+    u32 framebuffer;
+    u32 rbo;
+    glGenFramebuffers(1, &framebuffer);
+    defer(glDeleteFramebuffers(1, &framebuffer));
+    glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
+
+    glGenRenderbuffers(1, &rbo);
+    defer(glDeleteRenderbuffers(1, &rbo));
+    glBindRenderbuffer(GL_RENDERBUFFER, rbo);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, rbo);
+    glRenderbufferStorage(GL_RENDERBUFFER, GL_RGB16F, 4*sidePixels, 3*sidePixels);
+    assert(glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE);
+    glReadBuffer(GL_COLOR_ATTACHMENT0);
+    glClearColor(0,0,0,1);
+
+    // GGX filtering
+    glBindVertexArray(vao);
+    glUseProgram(ggxFilterProg);
+    glUniform1i(ggxFilterUnifLocs.cubemap, 0);
+
+    const int w = 4 * sidePixels;
+    const int h = 3 * sidePixels;
+    glUniform1f(ggxFilterUnifLocs.roughness2, 0.01f);
+    glUniform1ui(ggxFilterUnifLocs.numSamples, 10000u);
+    glViewport(0, 0, w, h);
+    glScissor(0, 0, w, h);
+    glClear(GL_COLOR_BUFFER_BIT);
+    glDrawArrays(GL_TRIANGLES, 0, 36);
+    tg::Img3f outImg(w, h);
+    glReadPixels(0, 0, w, h, GL_RGB, GL_FLOAT, outImg.data());
+    outImg.save("out.hdr");
+
+    return true;
 }
 
 int main(int argc, char* argv[])
@@ -90,7 +131,7 @@ int main(int argc, char* argv[])
     if(argc != 2)
         printf("wrong number of args\n");
 
-    if(strcmp(argv[1], "filter_cubemap"))
+    if(strcmp(argv[1], "filter_cubemap") == 0)
         return filterCubemap() ? 0 : 1;
 
     return 0;
