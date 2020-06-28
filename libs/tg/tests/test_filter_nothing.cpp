@@ -21,14 +21,45 @@ using glm::vec2;
 
 static char s_buffer[4*1024];
 
-float s_scale = 1;
-vec2 s_offset = {0, 0};
+static float s_scale = 1;
+static vec2 s_offset = {0, 0};
+static bool s_smooth = false;
+static u32 originalTex, tempTex1, tempTex2;
 
 static void drawGui()
 {
     ImGui::Begin("test", 0, 0);
+    ImGui::Checkbox("smooth", &s_smooth);
     ImGui::SliderFloat("scale", &s_scale, 0, 2);
     ImGui::End();
+}
+
+void computeDowscaleTexLog2(u32& outTex, i32& outTexW, i32& outTexH,
+    u32 originalTex, i32 originalTexW, i32 originalTexH, float scale)
+{
+    outTexW = originalTexW;
+    outTexH = originalTexH;
+    outTex = originalTex;
+    if(scale < 0.5f)
+    {
+        glBindFramebuffer(GL_FRAMEBUFFER, s_tempFramebuffer);
+        glBindVertexArray(s_fsVao);
+        glUseProgram(s_filterNothingProg);
+        while(scale < 0.5f)
+        {
+            glBindTexture(GL_TEXTURE_2D, outTex);
+            glUniform2f(s_filterNothingUnifs.texRegion,
+                float(outTexW) / originalTexW, float(outTexH) / originalTexH);
+            outTexW /= 2;
+            outTexH /= 2;
+            outTex = outTex == tempTex1 ? tempTex2 : tempTex1;
+            glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, outTex, 0);
+            glViewport(0, 0, outTexW, outTexH);
+            glScissor(0, 0, outTexW, outTexH);
+            glDrawArrays(GL_TRIANGLES, 0, 6);
+            scale *= 2;
+        }
+    }
 }
 
 static const char* s_vertShadSrc =
@@ -94,17 +125,32 @@ bool test_filterNothing()
         ImGui_ImplOpenGL3_Init();
     }
 
-    tg::Img3f img = tg::Img3f::load("autumn_cube.hdr");
-    u32 tex;
-    glGenTextures(1, &tex);
-    defer(glDeleteTextures(1, &tex));
+    auto setCommonTexParams = []() {
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    };
+
     glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, tex);
+    tg::Img3f img = tg::Img3f::load("autumn_cube.hdr");
+    glGenTextures(1, &originalTex);
+    defer(glDeleteTextures(1, &originalTex));
+    glBindTexture(GL_TEXTURE_2D, originalTex);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, img.width(), img.height(), 0, GL_RGB, GL_FLOAT, img.data());
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    setCommonTexParams();
+
+    glGenTextures(1, &tempTex1);
+    defer(glDeleteTextures(1, &tempTex1));
+    glBindTexture(GL_TEXTURE_2D, tempTex1);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, img.width(), img.height(), 0, GL_RGB, GL_FLOAT, nullptr);
+    setCommonTexParams();
+
+    glGenTextures(1, &tempTex2);
+    defer(glDeleteTextures(1, &tempTex2));
+    glBindTexture(GL_TEXTURE_2D, tempTex2);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, img.width(), img.height(), 0, GL_RGB, GL_FLOAT, nullptr);
+    setCommonTexParams();
 
     u32 vao, vbo, numVerts;
     tg::createScreenQuadMesh2D(vao, vbo, numVerts);
