@@ -28,12 +28,18 @@ namespace tg
 
 static const char s_filterFullscreenSrc_vertShad[] =
 R"GLSL(
-layout (location = 0) in vec3 a_pos;
+layout (location = 0) in vec2 a_pos;
+
+uniform vec2 u_texRegionMin = vec2(0, 0);
+uniform vec2 u_texRegionMax = vec2(1, 1);
+
+out vec2 v_tc;
 
 void main()
 {
-    v_tc = 0.5 * (a_pos + 1.0;
-    gl_Position = vec3(a_pos, 0.0, 1.0);
+    vec2 a = 0.5 * (a_pos + 1.0);
+    v_tc = mix(u_texRegionMin, u_texRegionMax, a);
+    gl_Position = vec4(a_pos, 0.0, 1.0);
 }
 )GLSL";
 
@@ -43,11 +49,11 @@ layout(location = 0) out vec4 o_color;
 
 uniform sampler2D u_texture;
 
-in vec3 v_tc;
+in vec2 v_tc;
 
 void main()
 {
-    o_color = texture(u_cubemap, v_tc);
+    o_color = texture(u_texture, v_tc);
 }
 )GLSL";
 
@@ -206,25 +212,6 @@ static float s_filterCubemapVerts[6*6*(3+2)] = {
 
 // --- CODE -------------------------------------------------------------------------------------------------------------
 
-u32 createFilterFullscreenVertShader()
-{
-    const u32 shad = glCreateShader(GL_VERTEX_SHADER);
-    const char* srcs[] = {srcs::header, s_filterFullscreenSrc_vertShad};
-    constexpr int numSrcs = tl::size(srcs);
-    i32 sizes[numSrcs];
-    for(int i = 0; i < numSrcs; i++)
-        sizes[i] = strlen(srcs[i]);
-    glShaderSource(shad, numSrcs, srcs, sizes);
-    glCompileShader(shad);
-    if(const char* errorMsg = getShaderCompileErrors(shad, s_buffer))
-    {
-        fprintf(stderr, "Error compiling(createFilterFullscreenVertShader): %s\n", errorMsg);
-        glDeleteShader(shad);
-        return 0;
-    }
-    return shad;
-}
-
 u32 createFilterCubemapVertShader()
 {
     const u32 shad = glCreateShader(GL_VERTEX_SHADER);
@@ -258,6 +245,25 @@ void createFilterCubemapMeshGpu(u32& vao, u32& vbo, u32& numVerts)
     glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5*sizeof(float), (void*)(3*sizeof(float)));
 }
 
+u32 createFilterVertShader()
+{
+    const u32 shad = glCreateShader(GL_VERTEX_SHADER);
+    const char* srcs[] = {srcs::header, s_filterFullscreenSrc_vertShad};
+    constexpr int numSrcs = tl::size(srcs);
+    i32 sizes[numSrcs];
+    for(int i = 0; i < numSrcs; i++)
+        sizes[i] = strlen(srcs[i]);
+    glShaderSource(shad, numSrcs, srcs, sizes);
+    glCompileShader(shad);
+    if(const char* errorMsg = getShaderCompileErrors(shad, s_buffer))
+    {
+        fprintf(stderr, "Error compiling(createFilterFullscreenVertShader): %s\n", errorMsg);
+        glDeleteShader(shad);
+        assert(false);
+    }
+    return shad;
+}
+
 template <int numSrcs>
 static u32 createFragShaderCommon(const char* (&srcs)[numSrcs], const char* shaderName)
 {
@@ -271,9 +277,15 @@ static u32 createFragShaderCommon(const char* (&srcs)[numSrcs], const char* shad
     {
         fprintf(stderr, "Error compiling(%s): \n%s", shaderName, errorMsg);
         glDeleteShader(shad);
-        return 0;
+        assert(false);
     }
     return shad;
+}
+
+void getFilterUnifLocs(FilterUnifLocs& locs, u32 prog)
+{
+    locs.texRegionMin = glGetUniformLocation(prog, "u_texRegionMin");
+    locs.texRegionMax = glGetUniformLocation(prog, "u_texRegionMax");
 }
 
 u32 createFilterNothingFragShader()
@@ -282,7 +294,13 @@ u32 createFilterNothingFragShader()
         srcs::header,
         s_filterNothing_fragShad,
     };
-    return createFragShaderCommon(srcs, "downscaleFragShader");
+    return createFragShaderCommon(srcs, "filterNothingFragShader");
+}
+
+void getFilterNothingUnifLocs(FilterNothingUnifLocs& locs, u32 prog)
+{
+    getFilterUnifLocs(locs, prog);
+    locs.texture = glGetUniformLocation(prog, "u_texture");
 }
 
 u32 createFilterCubemap_ggx_fragShader()

@@ -31,11 +31,17 @@ enum class FilterCubemapError {
          +---------+
 */
 
-u32 createFilterFullscreenVertShader();
 u32 createFilterCubemapVertShader();
 void createFilterCubemapMeshGpu(u32& vao, u32& vbo, u32& numVerts);
 
-u32 createFilterNothingFragShader(); // this is a texture filter that does nothing (it's useful for downscaling textures if you turn on linear interpolation)
+u32 createFilterVertShader();
+struct FilterUnifLocs {u32 texRegionMin, texRegionMax;};
+void getFilterUnifLocs(FilterUnifLocs& locs, u32 prog);
+
+// this is a texture filter that does nothing (it's useful for downscaling textures if you turn on linear interpolation)
+u32 createFilterNothingFragShader();
+struct FilterNothingUnifLocs : FilterUnifLocs {u32 texture;};
+void getFilterNothingUnifLocs(FilterNothingUnifLocs& locs, u32 prog);
 
 struct GgxFilterUnifLocs {
     i32 cubemap, numSamples, roughness2;
