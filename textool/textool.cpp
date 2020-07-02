@@ -166,14 +166,15 @@ bool filterCubemap()
         return outTex;
     };
 
-    auto createGgxFilteredTex = [&](u8* imgData, float rough2, u32 numSamples) -> u32
+    auto createGgxFilteredTex = [&](tg::CImg3f img, float rough2, u32 numSamples) -> u32
     {
         u32 tmpTex;
+        defer(glDeleteTextures(1, &tmpTex));
         glGenTextures(1, &tmpTex);
         defer(glDeleteTextures(1, &tmpTex));
         glBindTexture(GL_TEXTURE_CUBE_MAP, tmpTex);
         tg::simpleInitCubemapTexture();
-        tg::uploadCubemapTexture(0, w, h, GL_RGB, GL_RGB, GL_FLOAT, imgData);
+        tg::uploadCubemapTexture(0, img.width(), img.height(), GL_RGB, GL_RGB, GL_FLOAT, (u8*)img.data());
         u32 outTex;
         glGenTextures(1, &outTex);
         glBindTexture(GL_TEXTURE_2D, outTex);
@@ -193,74 +194,51 @@ bool filterCubemap()
         return outTex;
     };
 
-    // --- downscale 1 ---
-    const u32 tex_ds_1 = nextDownSampledTex(inTex);
-    tg::Img3f img_ds_1(w, h);
-    glReadPixels(0, 0, w, h, GL_RGB, GL_FLOAT, img_ds_1.data());
-    img_ds_1.save("test_ds_1.hdr");
+    struct StepConfig {
+        i32 srcStep;
+        u32 numSamples;
+        float rough2;
+        bool generateGgxFiltered;
+    };
+    const StepConfig steps[] = {
+        {-1, 500, 0.01, true},
+        {0, 1000, 0.025, true},
+        {1, 1000, 0.05, true},
+        {1, 10000, 0.1, true},
+        {2, 10000, 0.3, true},
+        {0, 0, 0, false},
+        {0, 0, 0, false},
+        {3, 10000, 1.0, true},
+    };
+    constexpr int numSteps = tl::size(steps);
+    struct StepOutput {
+        u32 dsTex, ggxTex;
+        i32 w, h;
+        tg::Img3f dsImg;
+    };
+    StepOutput stepOuts[numSteps];
 
-    // --- ggx filter1 ---
-    const u32 tex_ggx_1 = createGgxFilteredTex((u8*)img_ds_1.data(), 0.01, 500);
-    tg::Img3f img_ggx_1(w, h);
-    glReadPixels(0, 0, w, h, GL_RGB, GL_FLOAT, img_ggx_1.data());
-    img_ggx_1.save("test_ggx_1.hdr");
+    for(int i = 0; i < numSteps; i++)
+    {
+        stepOuts[i].dsTex = nextDownSampledTex(i ? stepOuts[i-1].dsTex : inTex);
+        stepOuts[i].dsImg = tg::Img3f(w, h);
+        glReadPixels(0, 0, w, h, GL_RGB, GL_FLOAT, stepOuts[i].dsImg.data());
+        tl::toStringBuffer(s_buffer, "test_ds_", i+1, ".hdr");
+        stepOuts[i].dsImg.save(s_buffer);
 
-    // --- downscale 2 ---
-    const u32 tex_ds_2 = nextDownSampledTex(tex_ds_1);
-    tg::Img3f img_ds_2(w, h);
-    glReadPixels(0, 0, w, h, GL_RGB, GL_FLOAT, img_ds_2.data());
-    img_ds_2.save("test_ds_2.hdr");
+        stepOuts[i].w = w;
+        stepOuts[i].h = h;
 
-    // --- ggx filter 2 ---
-    const u32 tex_ggx_2 = createGgxFilteredTex((u8*)img_ds_2.data(), 0.025, 1000);
-    tg::Img3f img_ggx_2(w, h);
-    glReadPixels(0, 0, w, h, GL_RGB, GL_FLOAT, img_ggx_2.data());
-    img_ggx_2.save("test_ggx_2.hdr");
-
-    // --- downsacale 3 ---
-    const u32 tex_ds_3 = nextDownSampledTex(tex_ds_2);
-    tg::Img3f img_ds_3(w, h);
-    glReadPixels(0, 0, w, h, GL_RGB, GL_FLOAT, img_ds_3.data());
-    img_ds_3.save("test_ds_3.hdr");
-
-    // --- ggx filter 3 ---
-    const u32 tex_ggx_3 = createGgxFilteredTex((u8*)img_ds_3.data(), 0.05, 1000);
-    tg::Img3f img_ggx_3(w, h);
-    glReadPixels(0, 0, w, h, GL_RGB, GL_FLOAT, img_ggx_3.data());
-    img_ggx_3.save("test_ggx_3.hdr");
-
-    // --- downsacale 4 ---
-    const u32 tex_ds_4 = nextDownSampledTex(tex_ds_3);
-    tg::Img3f img_ds_4(w, h);
-    glReadPixels(0, 0, w, h, GL_RGB, GL_FLOAT, img_ds_4.data());
-    img_ds_3.save("test_ds_4.hdr");
-
-    // --- ggx filter 4 ---
-    const u32 tex_ggx_4 = createGgxFilteredTex((u8*)img_ds_4.data(), 0.1, 1000);
-    tg::Img3f img_ggx_4(w, h);
-    glReadPixels(0, 0, w, h, GL_RGB, GL_FLOAT, img_ggx_4.data());
-    img_ggx_4.save("test_ggx_4.hdr");
-
-    /*
-    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, rbo);
-    assert(glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE);
-
-    // GGX filtering
-    glBindVertexArray(cubeVao);
-    glUseProgram(ggxFilterProg);
-    glUniform1i(ggxFilterUnifLocs.cubemap, 0);
-
-    const int w = 4 * sidePixels;
-    const int h = 3 * sidePixels;
-    glUniform1f(ggxFilterUnifLocs.roughness2, 0.01f);
-    glUniform1ui(ggxFilterUnifLocs.numSamples, 10000u);
-    glViewport(0, 0, w, h);
-    glScissor(0, 0, w, h);
-    glClear(GL_COLOR_BUFFER_BIT);
-    glDrawArrays(GL_TRIANGLES, 0, 36);
-    tg::Img3f outImg(w, h);
-    glReadPixels(0, 0, w, h, GL_RGB, GL_FLOAT, outImg.data());
-    outImg.save("out.hdr");*/
+        if(steps[i].generateGgxFiltered)
+        {
+            auto& srcImg = steps[i].srcStep == -1 ? inImg : stepOuts[steps[i].srcStep].dsImg;
+            stepOuts[i].ggxTex = createGgxFilteredTex(srcImg, steps[i].rough2, steps[i].numSamples);
+            tg::Img3f ggxImg(w, h);
+            glReadPixels(0, 0, w, h, GL_RGB, GL_FLOAT, ggxImg.data());
+            tl::toStringBuffer(s_buffer, "test_ggx_", i+1, ".hdr");
+            ggxImg.save(s_buffer);
+        }
+    }
 
     return true;
 }
