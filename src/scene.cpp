@@ -155,6 +155,15 @@ static size_t getMaterialInd(const cgltf_material* material) {
 static size_t getMeshInd(const cgltf_mesh* mesh) {
     return (size_t)(mesh - parsedData->meshes);
 }
+static size_t getSkinInd(const cgltf_skin* skin) {
+    return (size_t)(skin - parsedData->skins);
+}
+static size_t getCameraInd(const cgltf_camera* camera) {
+    return (size_t)(camera - parsedData->cameras);
+}
+static size_t getLightInd(const cgltf_light* light) {
+    return (size_t)(light - parsedData->lights);
+}
 
 static const char* getCameraName(int ind) {
     if(ind < 0)
@@ -175,13 +184,13 @@ static void imguiTexture(size_t textureInd, float* height)
 
 static void imguiTextureView(const cgltf_texture_view& view, float* height)
 {
-    ImGui::Text("Scale: %f", view.scale);
+    ImGui::Text("Scale: %g", view.scale);
     if(view.has_transform)
     if(ImGui::TreeNode("Transform")) {
         auto& tr = view.transform;
-        ImGui::Text("Offset: {%f, %f}", tr.offset[0], tr.offset[1]);
-        ImGui::Text("Scale: {%f, %f}", tr.scale[0], tr.scale[1]);
-        ImGui::Text("Rotation: %f", tr.rotation);
+        ImGui::Text("Offset: {%g, %g}", tr.offset[0], tr.offset[1]);
+        ImGui::Text("Scale: {%g, %g}", tr.scale[0], tr.scale[1]);
+        ImGui::Text("Rotation: %g", tr.rotation);
         ImGui::Text("Texcoord index: %d", tr.texcoord);
     }
     ImGui::Text("Texcoord index: %d", view.texcoord);
@@ -197,9 +206,9 @@ static void imguiMaterial(const cgltf_material& material)
     {
         const auto& props = material.pbr_metallic_roughness;
         const auto& colorFactor = props.base_color_factor;
-        ImGui::Text("Base color factor: {%f, %f, %f, %f}", colorFactor[0], colorFactor[1], colorFactor[2], colorFactor[3]);
-        ImGui::Text("Metallic factor: %f", props.metallic_factor);
-        ImGui::Text("Roughness factor: %f", props.roughness_factor);
+        ImGui::Text("Base color factor: {%g, %g, %g, %g}", colorFactor[0], colorFactor[1], colorFactor[2], colorFactor[3]);
+        ImGui::Text("Metallic factor: %g", props.metallic_factor);
+        ImGui::Text("Roughness factor: %g", props.roughness_factor);
         if(props.base_color_texture.texture)
         {
             const size_t texInd = getTextureInd(props.base_color_texture.texture);
@@ -315,7 +324,7 @@ static void imguiPrimitive(const cgltf_primitive& prim)
 
 static void imguiColor(const float (&color) [3])
 {
-    ImGui::TextColored(ImColor(color[0], color[1], color[2]), "(%f, %f, %f)", color[0], color[1], color[2]);
+    ImGui::TextColored(ImColor(color[0], color[1], color[2]), "(%g, %g, %g)", color[0], color[1], color[2]);
 }
 
 static void imguiLight(const cgltf_light& light)
@@ -330,13 +339,13 @@ static void imguiLight(const cgltf_light& light)
     ImGui::Text("Color: ");
     ImGui::SameLine();
     imguiColor(light.color);
-    ImGui::Text("Intensity: %f", light.intensity);
-    ImGui::Text("Range: %f", light.range);
+    ImGui::Text("Intensity: %g", light.intensity);
+    ImGui::Text("Range: %g", light.range);
     assert((size_t)light.type < tl::size(lightTypeStrs));
     ImGui::Text("Type: %s", lightTypeStrs[light.type]);
     if(light.type == cgltf_light_type_spot) {
-        ImGui::Text("Inner cone angle: %f", light.spot_inner_cone_angle);
-        ImGui::Text("Outer cone angle: %f", light.spot_outer_cone_angle);
+        ImGui::Text("Inner cone angle: %g", light.spot_inner_cone_angle);
+        ImGui::Text("Outer cone angle: %g", light.spot_outer_cone_angle);
     }
 }
 
@@ -525,14 +534,63 @@ static void drawGui_scenesTab()
     {
         const cgltf_scene& selectedScene = parsedData->scenes[imgui_state::selectedSceneInd];
         for(size_t nodeInd = 0; nodeInd < selectedScene.nodes_count; nodeInd++)
-        if(selectedScene.nodes[nodeInd]->parent == nullptr)
-            sceneNodeGuiRecusive(selectedScene.nodes[nodeInd]);
+            if(selectedScene.nodes[nodeInd]->parent == nullptr)
+                sceneNodeGuiRecusive(selectedScene.nodes[nodeInd]);
     }
     ImGui::EndChild();
 
     ImGui::SameLine();
     ImGui::BeginChild("right_panel", {rightPanelSize, -1}, true);
-    ImGui::Text("be");
+    if(selectedNode) {
+        if(selectedNode->skin) {
+            ImGui::Text("Skin: %ld", getSkinInd(selectedNode->skin));
+        }
+        if(selectedNode->mesh) {
+            ImGui::Text("Mesh: %ld", getMeshInd(selectedNode->mesh));
+        }
+        if(selectedNode->camera) {
+            ImGui::Text("Camera: %ld", getCameraInd(selectedNode->camera));
+        }
+        if(selectedNode->light) {
+            ImGui::Text("Light: %ld", getLightInd(selectedNode->light));
+        }
+        if(selectedNode->weights) {
+            // NOT TESTED
+            if(ImGui::TreeNode(&selectedNode->weights, "Weights(%ld)", selectedNode->weights_count)) {
+                for(size_t i = 0; i < selectedNode->weights_count; i++)
+                    ImGui::Text("%g", selectedNode->weights[i]);
+                ImGui::TreePop();
+            }
+        }
+        if(selectedNode->has_translation) {
+            const float* p = selectedNode->translation;
+            ImGui::Text("Translation: {%g, %g, %g}", p[0], p[1], p[2]);
+        }
+        if(selectedNode->has_rotation) {
+            const float* q = selectedNode->rotation;
+            ImGui::Text("Rotation: {%g, %g, %g, %g}", q[0], q[1], q[2], q[3]);
+        }
+        if(selectedNode->has_scale) {
+            const float* s = selectedNode->scale;
+            ImGui::Text("Scale: {%g, %g, %g}", s[0], s[1], s[2]);
+        }
+        if(selectedNode->has_matrix) {
+            const float* m = selectedNode->matrix;
+            ImGui::Text("Matrix: {\n"
+                        "  %g, %g, %g, %g,\n"
+                        "  %g, %g, %g, %g,\n"
+                        "  %g, %g, %g, %g,\n"
+                        "  %g, %g, %g, %g}",
+                        m[0], m[1], m[2], m[3],
+                        m[4], m[4], m[6], m[7],
+                        m[8], m[9], m[10], m[11],
+                        m[12], m[13], m[14], m[15]);
+        }
+        ImGui::Text("be");
+    }
+    else {
+        ImGui::Text("Nothing selected");
+    }
     ImGui::EndChild();
 
     ImGui::PopStyleVar(1);
@@ -793,16 +851,16 @@ static void drawGui_cameras()
                 ImGui::Text("Type: %s", cgltfCameraTypeStr(camera.type));
                 if(camera.type == cgltf_camera_type_perspective) {
                     auto& data = camera.data.perspective;
-                    ImGui::Text("Aspect ratio: %f", data.aspect_ratio);
-                    ImGui::Text("Fov Y: %f", data.yfov);
-                    ImGui::Text("Near: %f", data.znear);
-                    ImGui::Text("Far: %f", data.zfar);
+                    ImGui::Text("Aspect ratio: %g", data.aspect_ratio);
+                    ImGui::Text("Fov Y: %g", data.yfov);
+                    ImGui::Text("Near: %g", data.znear);
+                    ImGui::Text("Far: %g", data.zfar);
                 }
                 else if(camera.type == cgltf_camera_type_orthographic) {
                     auto& data = camera.data.orthographic;
-                    ImGui::Text("SizeXY: %f x %f", data.xmag, data.ymag);
-                    ImGui::Text("Near: %f", data.znear);
-                    ImGui::Text("Far: %f", data.zfar);
+                    ImGui::Text("SizeXY: %g x %g", data.xmag, data.ymag);
+                    ImGui::Text("Near: %g", data.znear);
+                    ImGui::Text("Far: %g", data.zfar);
                 }
                 ImGui::TreePop();
             }
