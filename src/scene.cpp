@@ -346,8 +346,8 @@ static void drawSceneNodeRecursive(const cgltf_node& node, const glm::mat4& pare
     const glm::mat4 modelMat = parentMat * glm::make_mat4(node.matrix);
     if(node.mesh)
     {
-        const glm::mat3 viewMat = tg::calcOrbitCameraMtx(orbitCam.heading, orbitCam.pitch, orbitCam.distance);
-        const glm::mat4 modelViewMat = glm::mat4(viewMat) * modelMat;
+        const glm::mat4 viewMat = tg::calcOrbitCameraMtx(orbitCam.heading, orbitCam.pitch, orbitCam.distance);
+        const glm::mat4 modelViewMat = viewMat * modelMat;
         const glm::mat3 modelMat3 = modelMat;
         const glm::mat4 modelViewProj = camProjMtx * modelViewMat;
         CSpan<cgltf_primitive> primitives(node.mesh->primitives, node.mesh->primitives_count);
@@ -883,15 +883,25 @@ static void loadTextures()
         gpu::textureSizes[i] = {w, h};
         imgui_state::textureHeights[i] = DEFAULT_IMGUI_IMG_HEIGHT;
         const auto* sampler = textures[i].sampler;
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, sampler->min_filter);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, sampler->mag_filter);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, sampler->wrap_s);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, sampler->wrap_t);
-        if(sampler->min_filter == GL_NEAREST_MIPMAP_NEAREST ||
-            sampler->min_filter == GL_LINEAR_MIPMAP_NEAREST ||
-            sampler->min_filter == GL_NEAREST_MIPMAP_LINEAR ||
-            sampler->min_filter == GL_LINEAR_MIPMAP_LINEAR
-        ) glGenerateMipmap(GL_TEXTURE_2D);
+        if(sampler) {
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, sampler->min_filter);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, sampler->mag_filter);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, sampler->wrap_s);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, sampler->wrap_t);
+            if(sampler->min_filter == GL_NEAREST_MIPMAP_NEAREST ||
+                sampler->min_filter == GL_LINEAR_MIPMAP_NEAREST ||
+                sampler->min_filter == GL_NEAREST_MIPMAP_LINEAR ||
+                sampler->min_filter == GL_LINEAR_MIPMAP_LINEAR
+            ) glGenerateMipmap(GL_TEXTURE_2D);
+        }
+        else { // there is no sampler, glTF specs some defaults when there is no sampler
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST_MIPMAP_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+            glGenerateMipmap(GL_TEXTURE_2D);
+        }
+        
     }
 }
 
