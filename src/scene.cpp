@@ -340,6 +340,33 @@ static void imguiLight(const cgltf_light& light)
     }
 }
 
+static const cgltf_material s_defaultMaterial =
+{
+    nullptr, // name
+    true, // has_pbr_metallic_roughness
+    false, //cgltf_bool has_pbr_specular_glossiness
+    cgltf_pbr_metallic_roughness {
+        cgltf_texture_view { // base_color_texture
+
+        },
+        cgltf_texture_view { // metallic_roughness_texture
+
+        },
+        {1.f, 1.f, 1.f, 1.f}, // base_color_factor
+        1.f, // metallic_factor;
+        1.f, // roughness_factor;
+    },
+    cgltf_pbr_specular_glossiness {},
+    cgltf_texture_view {nullptr}, // normal_texture
+    cgltf_texture_view {nullptr}, // occlusion_texture
+    cgltf_texture_view {nullptr}, // emissive_texture;
+    {0.f, 0.f, 0.f}, // emissive_factor
+    cgltf_alpha_mode_opaque,
+    0.5f, // cgltf_float alpha_cutoff
+    false, // double_sided
+    false, // unlit
+};
+
 static void drawSceneNodeRecursive(const cgltf_node& node, const glm::mat4& parentMat = glm::mat4(1.0))
 {
     //return; // DISABLED
@@ -356,26 +383,25 @@ static void drawSceneNodeRecursive(const cgltf_node& node, const glm::mat4& pare
         {
             const cgltf_primitive& prim = primitives[i];
             const u32 vao = vaos[i];
+            const auto& material = prim.material ? *prim.material : s_defaultMaterial;
 
             auto draw = [&]
             {
-                auto& material = prim.material;
-
                 glActiveTexture(GL_TEXTURE0 + (u32)ETexUnit::ALBEDO);
-                if(material->has_pbr_metallic_roughness) {
+                if(material.has_pbr_metallic_roughness) {
                     glUniform4fv(gpu::shaderPbrMetallic().unifLocs.color,
-                                 1, material->pbr_metallic_roughness.base_color_factor);
-                    if(auto tex = material->pbr_metallic_roughness.base_color_texture.texture)
+                                 1, material.pbr_metallic_roughness.base_color_factor);
+                    if(auto tex = material.pbr_metallic_roughness.base_color_texture.texture)
                         ;
                     else
                         glBindTexture(GL_TEXTURE_2D, gpu::whiteTexture);
                 }
-                else if(material->has_pbr_specular_glossiness) {
+                else if(material.has_pbr_specular_glossiness) {
                     assert("todo" && false);
                 }
 
                 glActiveTexture(GL_TEXTURE0 + (u32)ETexUnit::NORMAL);
-                if(auto tex = material->normal_texture.texture)
+                if(auto tex = material.normal_texture.texture)
                     ;
                 else
                     glBindTexture(GL_TEXTURE_2D, gpu::blueTexture);
@@ -399,15 +425,7 @@ static void drawSceneNodeRecursive(const cgltf_node& node, const glm::mat4& pare
                 glUniformMatrix3fv(shader.unifLocs.modelMat3, 1, GL_FALSE, &modelMat3[0][0]);
             };
 
-            if(prim.material == nullptr)
-            {
-                // if there is no material we will use a pbr-metallic material with some defaults
-                auto& shader = gpu::shaderPbrMetallic();
-                glUseProgram(shader.prog);
-                uploadCommonUniforms(shader);
-                draw();
-            }
-            else if(prim.material->has_pbr_metallic_roughness)
+            if(material.has_pbr_metallic_roughness)
             {
                 auto& shader = gpu::shaderPbrMetallic();
                 glUseProgram(shader.prog);
