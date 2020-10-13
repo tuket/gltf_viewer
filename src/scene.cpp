@@ -13,6 +13,7 @@
 #include <stbi.h>
 #include <glm/mat4x4.hpp>
 #include <glm/gtc/type_ptr.hpp>
+#include <glm/gtx/euler_angles.hpp>
 #include "utils.hpp"
 #include "shaders.hpp"
 #include <tg/cameras.hpp>
@@ -20,6 +21,7 @@
 using tl::FVector;
 using tl::Span;
 using tl::CSpan;
+using glm::vec3;
 
 extern GLFWwindow* window;
 
@@ -27,10 +29,8 @@ static Str openedFilePath = "";
 static cgltf_data* parsedData = nullptr;
 static cgltf_node* selectedNode = nullptr;
 static i32 selectedCamera = -1; // -1 is the default orbit camera, indices >=0 are indices of the gltf camera
-static struct OrbitCameraInfo{ float heading, pitch, distance; } orbitCam;
+static struct OrbitCameraInfo{ vec3 center; float heading, pitch, distance; } orbitCam;
 static const CameraProjectionInfo camProjInfo = {glm::radians(45.f), 0.02f, 500.f};
-
-static glm::mat4 camProjMtx;
 
 constexpr size_t MAX_BUFFER_OBJS = 256;
 constexpr size_t MAX_VERT_ARRAYS = 128;
@@ -49,6 +49,7 @@ static FVector<u32, MAX_VERT_ARRAYS> vaos;
 static FVector<u32, MAX_TOTAL_PRIMITIVES+1> meshPrimsVaos; // for mesh i, we can find here, at index i, the beginning of the vaos range, and at i+1 the end of that range
 static FVector<u32, MAX_TEXTURES> textures;
 static glm::ivec2 textureSizes[MAX_TEXTURES];
+static u32 crosshairVao;
 }
 
 const float MIN_IMGUI_IMG_HEIGHT = 32.f;
@@ -61,11 +62,14 @@ struct MaterialTexturesHeights { float color; float metallicRoughness; };
 static MaterialTexturesHeights materialTexturesHeights[MAX_MATERIALS];
 static u64 lightEnableBits = -1;
 static i32 selectedSceneInd = 0;
+static float crosshairScale = 0.01f;
+static bool showCrosshair = true;
 }
 
 namespace mouse_handling
 {
     static bool pressed = false;
+    static bool middlePressed = false;
     static float prevX, prevY;
     void onMouseButton(GLFWwindow* window, int button, int action, int mods)
     {
@@ -73,24 +77,37 @@ namespace mouse_handling
             return; // the mouse is captured by imgui
         if(button == GLFW_MOUSE_BUTTON_LEFT)
             pressed = action == GLFW_PRESS;
+        if(button == GLFW_MOUSE_BUTTON_MIDDLE)
+            middlePressed = action == GLFW_PRESS;
     }
     void onMouseMove(GLFWwindow* window, double x, double y)
     {
         if(selectedCamera == -1) // orbit camera is active
-        if(pressed)
+        if(pressed || middlePressed)
         {
             const float dx = (float)x - prevX;
             const float dy = (float)y - prevY;
-            constexpr float speed = PI;
             int windowW, windowH;
             glfwGetWindowSize(window, &windowW, &windowH);
-            orbitCam.heading += speed * dx / windowW;
-            while(orbitCam.heading < 0)
-                orbitCam.heading += 2*PI;
-            while(orbitCam.heading > 2*PI)
-                orbitCam.heading -= 2*PI;
-            orbitCam.pitch += speed * dy / windowH;
-            orbitCam.pitch = glm::clamp(orbitCam.pitch, -0.45f*PI, +0.45f*PI);
+            if(pressed)
+            {
+                constexpr float speed = PI;
+                orbitCam.heading -= speed * dx / windowW;
+                while(orbitCam.heading < 0)
+                    orbitCam.heading += 2*PI;
+                while(orbitCam.heading > 2*PI)
+                    orbitCam.heading -= 2*PI;
+                orbitCam.pitch -= speed * dy / windowH;
+                orbitCam.pitch = glm::clamp(orbitCam.pitch, -0.45f*PI, +0.45f*PI);
+            }
+            if(middlePressed)
+            {
+                // center panning
+                float speed = orbitCam.distance;
+                const vec3 v2d = {-dx/windowW, dy/windowH, 0};
+                const glm::mat3 rot = glm::eulerAngleXY(orbitCam.pitch, orbitCam.heading);
+                orbitCam.center += rot * (speed * v2d);
+            }
         }
         prevX = (float)x;
         prevY = (float)y;
@@ -128,6 +145,29 @@ void createBasicTextures()
     const u8 blue[3] = {0, 0, 255};
     glBindTexture(GL_TEXTURE_2D, gpu::blueTexture);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 1, 1, 0, GL_RGB, GL_UNSIGNED_BYTE, blue);
+}
+
+void createCrosshairMesh()
+{
+    glGenVertexArrays(1, &gpu::crosshairVao);
+    glBindVertexArray(gpu::crosshairVao);
+    u32 vbo;
+    glGenBuffers(1, &vbo);
+    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    static const float verts[] = {
+        -1, 0, 0,  1, 0, 0,
+        +1, 0, 0,  1, 0, 0,
+        0, -1, 0,  0, 1, 0,
+        0, +1, 0,  0, 1, 0,
+        0, 0, -1,  0, 0, 1,
+        0, 0, +1,  0, 0, 1
+    };
+    constexpr int stride = 6 * sizeof(float);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(verts), verts, GL_STATIC_DRAW);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, stride, nullptr);
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, stride, (void*)(3*sizeof(float)));
 }
 
 
@@ -376,16 +416,15 @@ static const cgltf_material s_defaultMaterial =
     false, // unlit
 };
 
-static void drawSceneNodeRecursive(const cgltf_node& node, const glm::mat4& parentMat = glm::mat4(1.0))
+static void drawSceneNodeRecursive(const cgltf_node& node, const glm::mat4& viewProj,
+    const glm::mat4& parentMat = glm::mat4(1.0))
 {
     //return; // DISABLED
     const glm::mat4 modelMat = parentMat * glm::make_mat4(node.matrix);
     if(node.mesh)
     {
-        const glm::mat4 viewMat = tg::calcOrbitCameraMtx(orbitCam.heading, orbitCam.pitch, orbitCam.distance);
-        const glm::mat4 modelViewMat = viewMat * modelMat;
         const glm::mat3 modelMat3 = modelMat;
-        const glm::mat4 modelViewProj = camProjMtx * modelViewMat;
+        const glm::mat4 modelViewProj = viewProj * modelMat;
         CSpan<cgltf_primitive> primitives(node.mesh->primitives, node.mesh->primitives_count);
         const u32* vaos = gpu::vaos.begin() + gpu::meshPrimsVaos[getMeshInd(node.mesh)];
         for(size_t i = 0; i < primitives.size(); i++)
@@ -450,24 +489,47 @@ static void drawSceneNodeRecursive(const cgltf_node& node, const glm::mat4& pare
     CSpan<cgltf_node*> children(node.children, node.children_count);
     for(cgltf_node* child : children) {
         assert(child);
-        drawSceneNodeRecursive(*child, modelMat);
+        drawSceneNodeRecursive(*child, viewProj, modelMat);
     }
+}
+
+static void drawOrbitCenterCrosshair(const glm::mat4& viewProj)
+{
+    if(!imgui_state::showCrosshair)
+        return;
+    auto& shadInfo = gpu::shaderVertColor();
+    glUseProgram(shadInfo.prog);
+    const float d = imgui_state::crosshairScale * orbitCam.distance;
+    const vec3& p = orbitCam.center;
+
+    const glm::mat4 modelMat = glm::scale(glm::translate(glm::mat4(1), p), vec3(d));
+    const glm::mat4 modelViewProj = viewProj * modelMat;
+
+    glUniformMatrix4fv(shadInfo.locs.modelViewProj, 1, GL_FALSE, &modelViewProj[0][0]);
+    glBindVertexArray(gpu::crosshairVao);
+    glDrawArrays(GL_LINES, 0, 6);
 }
 
 void drawScene()
 {
+    glEnable(GL_DEPTH_TEST);
     glClearColor(0.1f, 0.2f, 0.1f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     if(!parsedData)
         return;
-    //return;
+
     int w, h;
     glfwGetWindowSize(window, &w, &h);
-    camProjMtx = glm::perspective(camProjInfo.fovY, (float)w / h, camProjInfo.nearDist, camProjInfo.farDist);
+    const glm::mat4 viewMat = tg::calcOrbitCameraMtx(orbitCam.center, orbitCam.heading, orbitCam.pitch, orbitCam.distance);
+    const glm::mat4 projMat = glm::perspective(camProjInfo.fovY, (float)w / h, camProjInfo.nearDist, camProjInfo.farDist);
+    const glm::mat4 viewProj = projMat * viewMat;
     CSpan<cgltf_node> nodes(parsedData->nodes, parsedData->nodes_count);
     for(const cgltf_node& node : nodes)
         if(node.parent == nullptr)
-            drawSceneNodeRecursive(node);
+            drawSceneNodeRecursive(node, viewProj);
+
+    glDisable(GL_DEPTH_TEST);
+    drawOrbitCenterCrosshair(viewProj);
 }
 
 static void sceneNodeGuiRecusive(cgltf_node* node)
@@ -881,6 +943,12 @@ static void drawGui_lights()
     }
 }
 
+static void drawGui_options()
+{
+    ImGui::Checkbox("Show crosshair", &imgui_state::showCrosshair);
+    ImGui::SliderFloat("Crosshair scale", &imgui_state::crosshairScale, 0, 0.1f);
+}
+
 void drawGui()
 {
     if(!parsedData) {
@@ -936,6 +1004,12 @@ void drawGui()
             drawGui_lights();
             ImGui::EndTabItem();
         }
+
+        if(ImGui::BeginTabItem("Options")) {
+            drawGui_options();
+            ImGui::EndTabItem();
+        }
+
         ImGui::EndTabBar();
     }
 
@@ -1125,6 +1199,7 @@ static void loadMaterials()
 static void setupOrbitCamera()
 {
     // we should compute here nice values so we can view the whole scene
+    orbitCam.center = {0,0,0};
     orbitCam.pitch = 0;
     orbitCam.heading = 0;
     orbitCam.distance = 3.f;

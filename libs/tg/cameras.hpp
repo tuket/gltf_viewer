@@ -6,6 +6,6 @@ namespace tg
 {
 
 // takes radians
-glm::mat4 calcOrbitCameraMtx(float heading, float pitch, float distance);
+glm::mat4 calcOrbitCameraMtx(glm::vec3 center, float heading, float pitch, float distance);
 
 }

@@ -11,6 +11,7 @@ void onMouseMove(GLFWwindow* window, double x, double y);
 void onMouseWheel(GLFWwindow* window, double dx, double dy);
 }
 
+void createCrosshairMesh();
 void createBasicTextures();
 
 void drawScene();
