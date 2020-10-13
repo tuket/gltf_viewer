@@ -97,6 +97,7 @@ int main(int argc, char* argv[])
 
     gpu::buildShaders();
     createBasicTextures();
+    createAxesMesh();
     createCrosshairMesh();
 
     glfwSetMouseButtonCallback(window, mouse_handling::onMouseButton);

@@ -30,13 +30,14 @@ static cgltf_data* parsedData = nullptr;
 static cgltf_node* selectedNode = nullptr;
 static i32 selectedCamera = -1; // -1 is the default orbit camera, indices >=0 are indices of the gltf camera
 static struct OrbitCameraInfo{ vec3 center; float heading, pitch, distance; } orbitCam;
-static const CameraProjectionInfo camProjInfo = {glm::radians(45.f), 0.02f, 500.f};
+static CameraProjectionInfo camProjInfo = {glm::radians(50.f), 0.02f, 1000.f};
 
 constexpr size_t MAX_BUFFER_OBJS = 256;
 constexpr size_t MAX_VERT_ARRAYS = 128;
 constexpr size_t MAX_TEXTURES = 128;
 constexpr size_t MAX_MATERIALS = 128;
 constexpr size_t MAX_TOTAL_PRIMITIVES = 1023;
+static const glm::vec4 BG_COLOR = {0.1f, 0.2f, 0.1f, 1.0f};
 
 // scene gpu resources
 namespace gpu
@@ -50,6 +51,7 @@ static FVector<u32, MAX_TOTAL_PRIMITIVES+1> meshPrimsVaos; // for mesh i, we can
 static FVector<u32, MAX_TEXTURES> textures;
 static glm::ivec2 textureSizes[MAX_TEXTURES];
 static u32 crosshairVao;
+static u32 axesVao;
 }
 
 const float MIN_IMGUI_IMG_HEIGHT = 32.f;
@@ -62,6 +64,7 @@ struct MaterialTexturesHeights { float color; float metallicRoughness; };
 static MaterialTexturesHeights materialTexturesHeights[MAX_MATERIALS];
 static u64 lightEnableBits = -1;
 static i32 selectedSceneInd = 0;
+static bool showAxes = true;
 static float crosshairScale = 0.01f;
 static bool showCrosshair = true;
 }
@@ -170,6 +173,46 @@ void createCrosshairMesh()
     glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, stride, (void*)(3*sizeof(float)));
 }
 
+void createAxesMesh()
+{
+    glGenVertexArrays(1, &gpu::axesVao);
+    glBindVertexArray(gpu::axesVao);
+    u32 vbo;
+    glGenBuffers(1, &vbo);
+    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    const vec3 BG_COLOR3 = BG_COLOR;
+    struct Vert { vec3 pos, color; };
+    const float alpha = 0.4f;
+    const vec3 RED1 = {1, 0, 0};
+    const vec3 RED2 = glm::mix(BG_COLOR3, RED1, alpha);
+    const vec3 GREEN1 = {0, 1, 0};
+    const vec3 GREEN2 = glm::mix(BG_COLOR3, GREEN1, alpha);
+    const vec3 BLUE1 = {0, 0, 1};
+    const vec3 BLUE2 = glm::mix(BG_COLOR3, BLUE1, alpha);
+    static const Vert verts[] = {
+        // X
+        {{-1, 0, 0}, RED2},
+        {{ 0, 0, 0}, RED2},
+        {{ 0, 0, 0}, RED1},
+        {{+1, 0, 0}, RED1},
+        // Y
+        {{0, -1, 0}, GREEN2},
+        {{0,  0, 0}, GREEN2},
+        {{0,  0, 0}, GREEN1},
+        {{0, +1, 0}, GREEN1},
+        // Z
+        {{0, 0, -1}, BLUE2},
+        {{0, 0,  0}, BLUE2},
+        {{0, 0,  0}, BLUE1},
+        {{0, 0, +1}, BLUE1}
+    };
+    constexpr int stride = 6 * sizeof(float);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(verts), verts, GL_STATIC_DRAW);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, stride, nullptr);
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, stride, (void*)(3*sizeof(float)));
+}
 
 static size_t getBufferInd(const cgltf_buffer* buffer) {
     return (size_t)(buffer - parsedData->buffers);
@@ -493,6 +536,26 @@ static void drawSceneNodeRecursive(const cgltf_node& node, const glm::mat4& view
     }
 }
 
+static void drawAxes(const glm::mat4& viewProj)
+{
+    if(!imgui_state::showAxes)
+        return;
+    auto& shadInfo = gpu::shaderVertColor();
+    glUseProgram(shadInfo.prog);
+
+    const glm::mat4 modelMat = glm::scale(glm::mat4(1), vec3(1000));
+    const glm::mat4 modelViewProj = viewProj * modelMat;
+
+    glUniformMatrix4fv(shadInfo.locs.modelViewProj, 1, GL_FALSE, &modelViewProj[0][0]);
+    glBindVertexArray(gpu::axesVao);
+    glDrawArrays(GL_LINES, 0, 12);
+}
+
+static void drawFloorGrid(const glm::mat4& viewProj)
+{
+
+}
+
 static void drawOrbitCenterCrosshair(const glm::mat4& viewProj)
 {
     if(!imgui_state::showCrosshair)
@@ -513,7 +576,7 @@ static void drawOrbitCenterCrosshair(const glm::mat4& viewProj)
 void drawScene()
 {
     glEnable(GL_DEPTH_TEST);
-    glClearColor(0.1f, 0.2f, 0.1f, 1.0f);
+    glClearColor(BG_COLOR.r, BG_COLOR.g, BG_COLOR.b, BG_COLOR.a);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     if(!parsedData)
         return;
@@ -527,6 +590,9 @@ void drawScene()
     for(const cgltf_node& node : nodes)
         if(node.parent == nullptr)
             drawSceneNodeRecursive(node, viewProj);
+
+    drawAxes(viewProj);
+    drawFloorGrid(viewProj);
 
     glDisable(GL_DEPTH_TEST);
     drawOrbitCenterCrosshair(viewProj);
@@ -945,6 +1011,14 @@ static void drawGui_lights()
 
 static void drawGui_options()
 {
+    if(ImGui::TreeNode("Orbit camera")) {
+        ImGui::SliderFloat("Near", &camProjInfo.nearDist, 0.0001f, 0.5f);
+        ImGui::SliderFloat("Far", &camProjInfo.farDist, camProjInfo.nearDist, 100000, "%.3f", 3);
+        camProjInfo.farDist = glm::max(2.f*camProjInfo.nearDist, camProjInfo.farDist);
+        ImGui::SliderAngle("FOV Y", &camProjInfo.fovY, 1, 175);
+        ImGui::TreePop();
+    }
+    ImGui::Checkbox("Show axes", &imgui_state::showAxes);
     ImGui::Checkbox("Show crosshair", &imgui_state::showCrosshair);
     ImGui::SliderFloat("Crosshair scale", &imgui_state::crosshairScale, 0, 0.1f);
 }
