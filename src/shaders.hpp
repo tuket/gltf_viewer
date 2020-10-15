@@ -22,6 +22,14 @@ struct ShaderData_VertColor {
     } locs;
 };
 
+struct ShaderData_FloorGrid {
+    u32 prog;
+    struct {
+        u32 modelViewProj;
+        u32 color;
+    } locs;
+};
+
 namespace gpu
 {
 
@@ -29,6 +37,7 @@ bool buildShaders();
 
 const ShaderData& shaderPbrMetallic();
 const ShaderData& shaderPbrGloss();
-const ShaderData_VertColor shaderVertColor();
+const ShaderData_VertColor& shaderVertColor();
+const ShaderData_FloorGrid& shaderFloorGrid();
 
 }

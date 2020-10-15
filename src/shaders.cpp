@@ -107,7 +107,30 @@ void main()
 }
 )GLSL";
 
-} // namesapce src
+static const char onlyPos_vert[] =
+R"GLSL(
+uniform mat4 u_modelViewProj;
+
+layout (location = 0) in vec3 a_pos;
+
+void main()
+{
+    gl_Position = u_modelViewProj * vec4(a_pos, 1);
+}
+)GLSL";
+
+static const char floorGrid_frag[] =
+R"GLSL(
+layout (location = 0) out vec4 o_color;
+uniform vec3 u_color;
+
+void main()
+{
+    o_color = vec4(u_color, 1);
+}
+)GLSL";
+
+} // namespace src
 
 template <i32 N>
 static inline i32 strlenGeneric(const char (&)[N]) { return N-1; }
@@ -126,6 +149,7 @@ namespace sd
 {
     static ShaderData pbrMetallic;
     static ShaderData_VertColor vertColor;
+    static ShaderData_FloorGrid floorGrid;
 }
 
 constexpr u32 infoLogSize = 32*1024;
@@ -215,6 +239,44 @@ bool buildShaders()
         data.locs.modelViewProj = glGetUniformLocation(data.prog, "u_modelViewProj");
     }
 
+    { // shader floor grid
+        const u32 vertShad = glCreateShader(GL_VERTEX_SHADER);
+        uploadShaderSources(vertShad, src::version, src::onlyPos_vert);
+        glCompileShader(vertShad);
+        if(const char* errs = tg::getShaderCompileErrors(vertShad, infoLog)) {
+            tl::printError(errs);
+            return false;
+        }
+
+        const u32 fragShad = glCreateShader(GL_FRAGMENT_SHADER);
+        uploadShaderSources(fragShad, src::version, src::floorGrid_frag);
+        glCompileShader(fragShad);
+        if(const char* errs = tg::getShaderCompileErrors(fragShad, infoLog)) {
+            tl::printError(errs);
+            return false;
+        }
+
+        auto& data = sd::floorGrid;
+        data.prog = glCreateProgram();
+        glAttachShader(data.prog, vertShad);
+        glAttachShader(data.prog, fragShad);
+        glLinkProgram(data.prog);
+        if(const char* errs = tg::getShaderLinkErrors(data.prog, infoLog)) {
+            tl::printError(errs);
+            glDeleteShader(vertShad);
+            glDeleteShader(fragShad);
+            glDeleteProgram(data.prog);
+            return false;
+        }
+        glDetachShader(data.prog, vertShad);
+        glDetachShader(data.prog, fragShad);
+        glDeleteShader(vertShad);
+        glDeleteShader(fragShad);
+
+        data.locs.modelViewProj = glGetUniformLocation(data.prog, "u_modelViewProj");
+        data.locs.color = glGetUniformLocation(data.prog, "u_color");
+    }
+
     glDeleteShader(vertShader);
     return true;
 }
@@ -230,9 +292,14 @@ const ShaderData& shaderPbrGloss()
     return {};
 }
 
-const ShaderData_VertColor shaderVertColor()
+const ShaderData_VertColor& shaderVertColor()
 {
     return sd::vertColor;
+}
+
+const ShaderData_FloorGrid& shaderFloorGrid()
+{
+    return sd::floorGrid;
 }
 
 }

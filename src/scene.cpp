@@ -10,6 +10,7 @@
 #include <tl/basic.hpp>
 #include <tl/fmt.hpp>
 #include <tl/containers/fvector.hpp>
+#include <tl/containers/vector.hpp>
 #include <stbi.h>
 #include <glm/mat4x4.hpp>
 #include <glm/gtc/type_ptr.hpp>
@@ -37,6 +38,8 @@ constexpr size_t MAX_VERT_ARRAYS = 128;
 constexpr size_t MAX_TEXTURES = 128;
 constexpr size_t MAX_MATERIALS = 128;
 constexpr size_t MAX_TOTAL_PRIMITIVES = 1023;
+constexpr u32 FLOOR_GRID_RESOLUTION = 50;
+constexpr u32 FLOOR_GRID_SUBDIVS = 8; 
 static const glm::vec4 BG_COLOR = {0.1f, 0.2f, 0.1f, 1.0f};
 
 // scene gpu resources
@@ -52,6 +55,7 @@ static FVector<u32, MAX_TEXTURES> textures;
 static glm::ivec2 textureSizes[MAX_TEXTURES];
 static u32 crosshairVao;
 static u32 axesVao;
+static u32 floorGridVao[2]; // two grids: one bigger and thicker, one smaller and thinner
 }
 
 const float MIN_IMGUI_IMG_HEIGHT = 32.f;
@@ -65,6 +69,7 @@ static MaterialTexturesHeights materialTexturesHeights[MAX_MATERIALS];
 static u64 lightEnableBits = -1;
 static i32 selectedSceneInd = 0;
 static bool showAxes = true;
+static bool showFloorGrid = true;
 static float crosshairScale = 0.01f;
 static bool showCrosshair = true;
 }
@@ -212,6 +217,65 @@ void createAxesMesh()
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, stride, nullptr);
     glEnableVertexAttribArray(1);
     glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, stride, (void*)(3*sizeof(float)));
+}
+
+void createFloorGridMesh()
+{
+    glGenVertexArrays(2, gpu::floorGridVao);
+    u32 vbo[2];
+    glGenBuffers(2, vbo);
+
+    // thick lines
+    glBindVertexArray(gpu::floorGridVao[0]);
+    glBindBuffer(GL_ARRAY_BUFFER, vbo[0]);
+    tl::Vector<vec3> verts;
+    constexpr int n = FLOOR_GRID_RESOLUTION;
+    verts.reserve(4 + 8*n);
+    // fist the 2 lines that pass though the origin
+    verts.push_back({-1, 0, 0});
+    verts.push_back({+1, 0, 0});
+    verts.push_back({0, 0, -1});
+    verts.push_back({0, 0, +1});
+    // the rest of the lines
+    const float d = float(1) / n; // distance between lines
+    for(int i = 1; i <= n; i++) {
+        verts.push_back({-1, 0, -d*i});
+        verts.push_back({+1, 0, -d*i});
+        verts.push_back({-1, 0, +d*i});
+        verts.push_back({+1, 0, +d*i});
+
+        verts.push_back({-d*i, 0, -1});
+        verts.push_back({-d*i, 0, +1});
+        verts.push_back({+d*i, 0, -1});
+        verts.push_back({+d*i, 0, +1});
+    }
+    glBufferData(GL_ARRAY_BUFFER, verts.size() * sizeof(vec3), verts.data(), GL_STATIC_DRAW);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, nullptr);
+
+    // subdivisions
+    glBindVertexArray(gpu::floorGridVao[1]);
+    glBindBuffer(GL_ARRAY_BUFFER, vbo[1]);
+
+    const int m = FLOOR_GRID_SUBDIVS;
+    const float dd = d / m;
+    verts.resize(0);
+    verts.reserve(8*n*(m-1));
+    for(int i = 0; i < n; i++)
+    for(int j = 1; j < m; j++) {
+        verts.emplace_back(-1, 0, -d*i - dd*j);
+        verts.emplace_back(+1, 0, -d*i - dd*j);
+        verts.emplace_back(-1, 0, +d*i + dd*j);
+        verts.emplace_back(+1, 0, +d*i + dd*j);
+
+        verts.emplace_back(-d*i - dd*j, 0, -1);
+        verts.emplace_back(-d*i - dd*j, 0, +1);
+        verts.emplace_back(+d*i + dd*j, 0, -1);
+        verts.emplace_back(+d*i + dd*j, 0, +1);
+    }
+    glBufferData(GL_ARRAY_BUFFER, verts.size() * sizeof(vec3), verts.data(), GL_STATIC_DRAW);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, nullptr);
 }
 
 static size_t getBufferInd(const cgltf_buffer* buffer) {
@@ -553,7 +617,48 @@ static void drawAxes(const glm::mat4& viewProj)
 
 static void drawFloorGrid(const glm::mat4& viewProj)
 {
+    if(!imgui_state::showFloorGrid)
+        return;
+    auto& shadInfo = gpu::shaderFloorGrid();
+    glUseProgram(shadInfo.prog);
 
+    // compute the grid scaling
+    float scale;
+    float alpha;
+    {
+        scale = 0.1f * FLOOR_GRID_RESOLUTION * orbitCam.distance;
+        int i = 0;
+        while(scale > FLOOR_GRID_SUBDIVS) {
+            scale /= FLOOR_GRID_SUBDIVS;
+            i++;
+        }
+        alpha = scale / FLOOR_GRID_SUBDIVS;
+        scale = FLOOR_GRID_SUBDIVS;
+        while(i) {
+            scale *= FLOOR_GRID_SUBDIVS;
+            i--;
+        }
+    }
+
+    const glm::mat4 modelMat = glm::scale(glm::mat4(1), vec3(scale));
+    const glm::mat4 modelViewProj = viewProj * modelMat;
+
+    glUniformMatrix4fv(shadInfo.locs.modelViewProj, 1, GL_FALSE, &modelViewProj[0][0]);
+
+    const vec3 BG_COLOR3(BG_COLOR);
+    // normal grid
+    glUniform3f(shadInfo.locs.color, 1, 1, 1);
+    glBindVertexArray(gpu::floorGridVao[0]);
+    if(imgui_state::showAxes) // when we are drawing the axes, there is no need to draw the grid line that passes though the origin of coords
+        glDrawArrays(GL_LINES, 4, 8 * FLOOR_GRID_RESOLUTION);
+    else
+        glDrawArrays(GL_LINES, 0, 4 + 8 * FLOOR_GRID_RESOLUTION);
+
+    // subdiv grid
+    const vec3 color = glm::mix(vec3(1), BG_COLOR3, alpha);
+    glUniform3f(shadInfo.locs.color, color.r, color.g, color.b);
+    glBindVertexArray(gpu::floorGridVao[1]);
+    glDrawArrays(GL_LINES, 0, 8*FLOOR_GRID_RESOLUTION*(FLOOR_GRID_SUBDIVS-1));
 }
 
 static void drawOrbitCenterCrosshair(const glm::mat4& viewProj)
@@ -1019,6 +1124,7 @@ static void drawGui_options()
         ImGui::TreePop();
     }
     ImGui::Checkbox("Show axes", &imgui_state::showAxes);
+    ImGui::Checkbox("Show floor grid", &imgui_state::showFloorGrid);
     ImGui::Checkbox("Show crosshair", &imgui_state::showCrosshair);
     ImGui::SliderFloat("Crosshair scale", &imgui_state::crosshairScale, 0, 0.1f);
 }

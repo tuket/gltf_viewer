@@ -12,6 +12,7 @@ void onMouseWheel(GLFWwindow* window, double dx, double dy);
 }
 
 void createAxesMesh();
+void createFloorGridMesh();
 void createCrosshairMesh();
 void createBasicTextures();
 
