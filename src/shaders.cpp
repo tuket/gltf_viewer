@@ -109,12 +109,15 @@ void main()
 
 static const char onlyPos_vert[] =
 R"GLSL(
+uniform mat4 u_modelView;
 uniform mat4 u_modelViewProj;
 
 layout (location = 0) in vec3 a_pos;
+out vec3 v_camSpacePos;
 
 void main()
 {
+    v_camSpacePos = vec3(u_modelView * vec4(a_pos, 1));
     gl_Position = u_modelViewProj * vec4(a_pos, 1);
 }
 )GLSL";
@@ -122,11 +125,16 @@ void main()
 static const char floorGrid_frag[] =
 R"GLSL(
 layout (location = 0) out vec4 o_color;
-uniform vec3 u_color;
+in vec3 v_camSpacePos;
+uniform vec4 u_color;
+uniform float u_distToFloor;
 
 void main()
 {
-    o_color = vec4(u_color, 1);
+    float depth = length(v_camSpacePos);
+    float distAlpha = pow(3*u_distToFloor / depth, 1.7);
+    distAlpha = min(distAlpha, 1);
+    o_color = vec4(u_color.rgb, u_color.a * distAlpha);
 }
 )GLSL";
 
@@ -273,8 +281,10 @@ bool buildShaders()
         glDeleteShader(vertShad);
         glDeleteShader(fragShad);
 
+        data.locs.modelView = glGetUniformLocation(data.prog, "u_modelView");
         data.locs.modelViewProj = glGetUniformLocation(data.prog, "u_modelViewProj");
         data.locs.color = glGetUniformLocation(data.prog, "u_color");
+        data.locs.distToFloor = glGetUniformLocation(data.prog, "u_distToFloor");
     }
 
     glDeleteShader(vertShader);

@@ -25,8 +25,10 @@ struct ShaderData_VertColor {
 struct ShaderData_FloorGrid {
     u32 prog;
     struct {
+        u32 modelView;
         u32 modelViewProj;
         u32 color;
+        u32 distToFloor;
     } locs;
 };
 

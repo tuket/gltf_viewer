@@ -15,6 +15,7 @@
 #include <glm/mat4x4.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/gtx/euler_angles.hpp>
+#include <glm/gtc/matrix_inverse.hpp>
 #include "utils.hpp"
 #include "shaders.hpp"
 #include <tg/cameras.hpp>
@@ -23,6 +24,7 @@ using tl::FVector;
 using tl::Span;
 using tl::CSpan;
 using glm::vec3;
+using glm::vec4;
 
 extern GLFWwindow* window;
 
@@ -615,7 +617,7 @@ static void drawAxes(const glm::mat4& viewProj)
     glDrawArrays(GL_LINES, 0, 12);
 }
 
-static void drawFloorGrid(const glm::mat4& viewProj)
+static void drawFloorGrid(const glm::mat4& viewMat, const glm::mat4& viewProj)
 {
     if(!imgui_state::showFloorGrid)
         return;
@@ -638,16 +640,31 @@ static void drawFloorGrid(const glm::mat4& viewProj)
             scale *= FLOOR_GRID_SUBDIVS;
             i--;
         }
+        alpha = 1 - alpha;
     }
 
     const glm::mat4 modelMat = glm::scale(glm::mat4(1), vec3(scale));
+    const auto viewInv = glm::affineInverse(viewMat);
+    const glm::mat4 modelView = viewMat * modelMat;
     const glm::mat4 modelViewProj = viewProj * modelMat;
 
+    const vec3 camPos(viewMat * vec4(0,1,0, 0));
+    glUniformMatrix4fv(shadInfo.locs.modelView, 1, GL_FALSE, &modelView[0][0]);
     glUniformMatrix4fv(shadInfo.locs.modelViewProj, 1, GL_FALSE, &modelViewProj[0][0]);
+    printf("----\n"
+        "%g % g %g %g\n"
+        "%g % g %g %g\n"
+        "%g % g %g %g\n"
+        "%g % g %g %g\n",
+        viewMat[0][0], viewMat[0][1], viewMat[0][2], viewMat[0][3],
+        viewMat[1][0], viewMat[1][1], viewMat[1][2], viewMat[1][3],
+        viewMat[2][0], viewMat[2][1], viewMat[2][2], viewMat[2][3],
+        viewMat[3][0], viewMat[3][1], viewMat[3][2], viewMat[3][3]);
+    printf("camPos: %g %g %g\n", camPos.x, camPos.y, camPos.z);
+    glUniform1f(shadInfo.locs.distToFloor, abs(viewInv[3][1]));
 
-    const vec3 BG_COLOR3(BG_COLOR);
     // normal grid
-    glUniform3f(shadInfo.locs.color, 1, 1, 1);
+    glUniform4f(shadInfo.locs.color, 1, 1, 1, 1);
     glBindVertexArray(gpu::floorGridVao[0]);
     if(imgui_state::showAxes) // when we are drawing the axes, there is no need to draw the grid line that passes though the origin of coords
         glDrawArrays(GL_LINES, 4, 8 * FLOOR_GRID_RESOLUTION);
@@ -655,8 +672,7 @@ static void drawFloorGrid(const glm::mat4& viewProj)
         glDrawArrays(GL_LINES, 0, 4 + 8 * FLOOR_GRID_RESOLUTION);
 
     // subdiv grid
-    const vec3 color = glm::mix(vec3(1), BG_COLOR3, alpha);
-    glUniform3f(shadInfo.locs.color, color.r, color.g, color.b);
+    glUniform4f(shadInfo.locs.color, 1, 1, 1, alpha);
     glBindVertexArray(gpu::floorGridVao[1]);
     glDrawArrays(GL_LINES, 0, 8*FLOOR_GRID_RESOLUTION*(FLOOR_GRID_SUBDIVS-1));
 }
@@ -697,7 +713,11 @@ void drawScene()
             drawSceneNodeRecursive(node, viewProj);
 
     drawAxes(viewProj);
-    drawFloorGrid(viewProj);
+
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA); 
+    drawFloorGrid(viewMat, viewProj);
+    glDisable(GL_BLEND);
 
     glDisable(GL_DEPTH_TEST);
     drawOrbitCenterCrosshair(viewProj);
