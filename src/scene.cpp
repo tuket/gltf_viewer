@@ -651,16 +651,6 @@ static void drawFloorGrid(const glm::mat4& viewMat, const glm::mat4& viewProj)
     const vec3 camPos(viewMat * vec4(0,1,0, 0));
     glUniformMatrix4fv(shadInfo.locs.modelView, 1, GL_FALSE, &modelView[0][0]);
     glUniformMatrix4fv(shadInfo.locs.modelViewProj, 1, GL_FALSE, &modelViewProj[0][0]);
-    printf("----\n"
-        "%g % g %g %g\n"
-        "%g % g %g %g\n"
-        "%g % g %g %g\n"
-        "%g % g %g %g\n",
-        viewMat[0][0], viewMat[0][1], viewMat[0][2], viewMat[0][3],
-        viewMat[1][0], viewMat[1][1], viewMat[1][2], viewMat[1][3],
-        viewMat[2][0], viewMat[2][1], viewMat[2][2], viewMat[2][3],
-        viewMat[3][0], viewMat[3][1], viewMat[3][2], viewMat[3][3]);
-    printf("camPos: %g %g %g\n", camPos.x, camPos.y, camPos.z);
     glUniform1f(shadInfo.locs.distToFloor, abs(viewInv[3][1]));
 
     // normal grid
