@@ -55,6 +55,14 @@ EAttrib strToEAttrib(CStr str)
     return EAttrib::COUNT;
 }
 
+Aabb makeUnion(const Aabb& a, const Aabb& b)
+{
+    Aabb c;
+    c.pMin = glm::min(a.pMin, b.pMin);
+    c.pMax = glm::max(a.pMax, b.pMax);
+    return c;
+}
+
 bool Splitter(bool split_vertically, float thickness, float* size1, float* size2, float min_size1, float min_size2, float splitter_long_axis_size)
 {
     using namespace ImGui;

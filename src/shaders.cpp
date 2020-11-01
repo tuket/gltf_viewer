@@ -299,7 +299,8 @@ const ShaderData& shaderPbrMetallic()
 const ShaderData& shaderPbrGloss()
 {
     assert(false && "not implemented");
-    return {};
+    static const ShaderData temp{};
+    return temp;
 }
 
 const ShaderData_VertColor& shaderVertColor()

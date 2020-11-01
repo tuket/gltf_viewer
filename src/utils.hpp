@@ -53,6 +53,19 @@ enum class ETexUnit : u8 {
     COUNT
 };
 
+struct Aabb {
+    glm::vec3 pMin, pMax;
+
+    Aabb() {}
+    constexpr Aabb(const glm::vec3& pMin, const glm::vec3& pMax) : pMin(pMin), pMax(pMax) {}
+    static Aabb ZERO() { return Aabb(glm::vec3(0), glm::vec3(0)); } 
+    static Aabb UNDEF() { return Aabb(glm::vec3(+1.f/0.f), glm::vec3(-1.f/0.f)); }
+
+    bool isValid()const { return pMin.x <= pMax.x && pMin.y <= pMax.y && pMin.z <= pMax.z; }
+};
+
+Aabb makeUnion(const Aabb& a, const Aabb& b);
+
 struct CameraProjectionInfo {
     float fovY;
     float nearDist, farDist;

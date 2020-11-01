@@ -1386,13 +1386,98 @@ static void loadMaterials()
     }
 }
 
+static Aabb computeMeshAabb(const cgltf_mesh& mesh, const glm::mat4& modelMtx)
+{
+    Aabb box = Aabb::UNDEF();
+    tl::CSpan<cgltf_primitive> prims(mesh.primitives, mesh.primitives_count);
+    for(const auto& prim : prims)
+    {
+        tl::CSpan<cgltf_attribute> attribs(prim.attributes, prim.attributes_count);
+        for(const auto& attrib : attribs)
+        {
+            if(attrib.type != cgltf_attribute_type_position)
+                continue;
+            const cgltf_accessor* accessor = attrib.data;
+            const GLint numComponents = cgltfTypeNumComponents(accessor->type);
+            const GLenum componentType = cgltfComponentTypeToGl(accessor->component_type);
+            assert(numComponents == 3 && componentType == GL_FLOAT);
+
+            const size_t stride = accessor->stride ? accessor->stride : 3 * sizeof(float);
+            size_t offset = accessor->offset + accessor->buffer_view->offset;
+
+            if(accessor->has_min) {
+                box.pMin = glm::min(box.pMin, glm::make_vec3(accessor->min));
+            }
+            else {
+                size_t o = offset;
+                for(int i = 0; i < accessor->count; i++) {
+                    auto pos = (vec3*)(accessor->buffer_view->buffer + o);
+                    box.pMin = glm::min(box.pMin, *pos);
+                    o += stride;
+                }
+            }
+
+            if(accessor->has_max) {
+                box.pMax = glm::max(box.pMax, glm::make_vec3(accessor->max));
+            }
+            else {
+                size_t o = offset;
+                for(int i = 0; i < accessor->count; i++) {
+                    auto pos = (vec3*)(accessor->buffer_view->buffer + o);
+                    box.pMax = glm::max(box.pMax, *pos);
+                    o += stride;
+                }
+            }
+        }
+    }
+    return box;
+}
+
+static Aabb computeNodeAabb(const cgltf_node& node, glm::mat4 modelMtx = glm::mat4(1))
+{
+    Aabb box = Aabb::UNDEF();
+    modelMtx *= glm::make_mat4(node.matrix);
+    if(node.mesh)
+        box = computeMeshAabb(*node.mesh, modelMtx);
+
+    tl::CSpan<cgltf_node*> children(node.children, node.children_count);
+    for(auto child : children)
+        box = makeUnion(box, computeNodeAabb(*child, modelMtx));
+
+    return box;
+}
+
+static Aabb computeSceneAabb(const cgltf_scene& scene)
+{
+    tl::CSpan<cgltf_node*> nodes(scene.nodes, scene.nodes_count);
+    Aabb box = Aabb::UNDEF();
+    for(auto node : nodes) {
+        if(node->parent == nullptr) 
+            box = makeUnion(box, computeNodeAabb(*node));
+    }
+    return box;
+}
+
 static void setupOrbitCamera()
 {
-    // we should compute here nice values so we can view the whole scene
-    orbitCam.center = {0,0,0};
-    orbitCam.pitch = 0;
-    orbitCam.heading = 0;
-    orbitCam.distance = 3.f;
+    orbitCam.heading = glm::radians(30.f);
+    orbitCam.pitch = -glm::radians(30.f);
+    if(imgui_state::selectedSceneInd < 0) {
+        orbitCam.center = {0,0,0};
+        orbitCam.distance = 2.f;
+    }
+    else {
+        Aabb box = computeSceneAabb(parsedData->scenes[imgui_state::selectedSceneInd]);
+        if(box.isValid()) {
+            orbitCam.center = 0.5f * (box.pMin + box.pMax);
+            const vec3 size = box.pMax - box.pMin;
+            orbitCam.distance = 2 * glm::max(size.x, glm::max(size.y, size.z));
+        }
+        else {
+            orbitCam.center = {0,0,0};
+            orbitCam.distance = 1;
+        }
+    }
 }
 
 bool loadGltf(const char* path)
@@ -1415,6 +1500,9 @@ bool loadGltf(const char* path)
                 imgui_state::selectedSceneInd = i;
                 break;
             }
+        if(imgui_state::selectedSceneInd && parsedData->scenes_count)
+            imgui_state::selectedSceneInd = 0;
+
         loadTextures();
         loadBufferObjects();
         createVaos();
