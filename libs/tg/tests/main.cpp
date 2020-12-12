@@ -9,6 +9,7 @@ bool test_cubemap();
 bool test_downscale();
 bool test_generateGgxLut();
 bool test_iblPbr();
+bool test_glslRand();
 
 struct TestInfo {
     CStr name;
@@ -20,7 +21,8 @@ static TestInfo tests[] = {
     {"cubemap", test_cubemap},
     {"downscale", test_downscale},
     {"generateGgxLut", test_generateGgxLut},
-    {"iblPbr", test_iblPbr}
+    {"iblPbr", test_iblPbr},
+    {"glslRand", test_glslRand},
 };
 
 static char scratchStr[1024];

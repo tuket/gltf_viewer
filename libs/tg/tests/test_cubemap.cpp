@@ -15,6 +15,7 @@
 #include "test_utils.hpp"
 
 constexpr float PI = glm::pi<float>();
+using glm::vec3;
 
 static GLFWwindow* window;
 
@@ -62,14 +63,15 @@ bool test_cubemap()
     glBindTexture(GL_TEXTURE_CUBE_MAP, cubemapTextures[0]);
     tg::simpleInitCubemapTexture();
     {
+        const char* imgFileName = "cubemap_test_rgb.png";
         int w, h, nc;
-        u8* data = stbi_load("cubemap_test_rgb.png", &w, &h, &nc, 3);
+        u8* data = stbi_load(imgFileName, &w, &h, &nc, 3);
         if(data) {
             tg::uploadCubemapTexture(0, w, h, GL_RGB8, GL_RGB, GL_UNSIGNED_BYTE, data);
             stbi_image_free(data);
         }
         else {
-            printf("error loading img\n");
+            printf("error loading img: %s\n", imgFileName);
             return 1;
         }
     }
@@ -78,14 +80,15 @@ bool test_cubemap()
     glBindTexture(GL_TEXTURE_CUBE_MAP, cubemapTextures[1]);
     tg::simpleInitCubemapTexture();
     {
+        const char* imgFileName = "test_ds_1.hdr";
         int w, h, nc;
-        u8* data = stbi_load("test.hdr", &w, &h, &nc, 3);
+        u8* data = stbi_load(imgFileName, &w, &h, &nc, 3);
         if(data) {
             tg::uploadCubemapTexture(0, w, h, GL_RGB8, GL_RGB, GL_UNSIGNED_BYTE, data);
             stbi_image_free(data);
         }
         else {
-            printf("error loading img\n");
+            printf("error loading img: %s\n", imgFileName);
             return 1;
         }
     }
@@ -123,7 +126,7 @@ bool test_cubemap()
 
         const glm::mat4 modelMtx(1);
         const glm::mat4 projMtx = glm::perspective(glm::radians(45.f), float(w)/h, 0.1f, 1000.f);
-        const glm::mat4 viewMtx = tg::calcOrbitCameraMtx(s_orbitCam.heading, s_orbitCam.pitch, s_orbitCam.distance);
+        const glm::mat4 viewMtx = tg::calcOrbitCameraMtx(vec3(0, 0, 0), s_orbitCam.heading, s_orbitCam.pitch, s_orbitCam.distance);
 
         glDisable(GL_DEPTH_TEST);
         glDepthMask(GL_FALSE);

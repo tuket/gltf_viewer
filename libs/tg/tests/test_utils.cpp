@@ -13,11 +13,33 @@ constexpr float PI = glm::pi<float>();
 
 char g_buffer[4*1024];
 
-static void glErrorCallback(const char *name, void *funcptr, int len_args, ...) {
+static const char* geGlErrStr(GLenum const err)
+{
+    switch (err) {
+    case GL_NO_ERROR: return "GL_NO_ERROR";
+    case GL_INVALID_ENUM: return "GL_INVALID_ENUM";
+    case GL_INVALID_VALUE: return "GL_INVALID_VALUE";
+    case GL_INVALID_OPERATION: return "GL_INVALID_OPERATION";
+    case GL_INVALID_FRAMEBUFFER_OPERATION: return "GL_INVALID_FRAMEBUFFER_OPERATION";
+    case GL_OUT_OF_MEMORY: return "GL_OUT_OF_MEMORY";
+#ifdef GL_STACK_UNDERFLOW
+    case GL_STACK_UNDERFLOW: return "GL_STACK_UNDERFLOW";
+#endif
+#ifdef GL_STACK_OVERFLOW:
+    case GL_STACK_OVERFLOW: return "GL_STACK_OVERFLOW";
+#endif
+    default:
+        assert(!"unknown error");
+        return nullptr;
+    }
+}
+
+
+void glErrorCallback(const char *name, void *funcptr, int len_args, ...) {
     GLenum error_code;
     error_code = glad_glGetError();
     if (error_code != GL_NO_ERROR) {
-        fprintf(stderr, "ERROR %s in %s\n", gluErrorString(error_code), name);
+        fprintf(stderr, "ERROR %s in %s\n", geGlErrStr(error_code), name);
         assert(false);
     }
 }
@@ -53,12 +75,12 @@ GLFWwindow* simpleInitGlfwGL()
 void OrbitCameraInfo::applyMouseDrag(glm::vec2 deltaPixels, glm::vec2 screenSize)
 {
     constexpr float speed = PI;
-    heading += speed * deltaPixels.x / screenSize.x;
+    heading -= speed * deltaPixels.x / screenSize.x;
     while(heading < 0)
         heading += 2*PI;
     while(heading > 2*PI)
         heading -= 2*PI;
-    pitch += speed * deltaPixels.y / screenSize.y;
+    pitch -= speed * deltaPixels.y / screenSize.y;
     pitch = glm::clamp(pitch, -0.45f*PI, +0.45f*PI);
 }
 

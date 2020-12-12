@@ -16,7 +16,9 @@ namespace srcs
 {
 extern const char* header;
 extern const char* hammersley;
+extern const char* pcg_uvec3_uvec3;
 extern const char* importanceSampleGgxD;
+extern const char* uniformSample;
 }
 
 }

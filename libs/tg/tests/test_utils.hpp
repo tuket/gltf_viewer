@@ -6,6 +6,7 @@
 struct GLFWwindow;
 
 GLFWwindow* simpleInitGlfwGL();
+void glErrorCallback(const char *name, void *funcptr, int len_args, ...);
 
 extern char g_buffer[4*1024];
 

@@ -129,6 +129,22 @@ vec2 hammersleyVec2(uint i, uint numSamples)
 }
 )GLSL";
 
+const char* pcg_uvec3_uvec3 =
+R"GLSL(
+uvec3 pcg_uvec3_uvec3(uvec3 v)
+{
+    v = v * 1664525u + 1013904223u;
+    v.x += v.y*v.z;
+    v.y += v.z*v.x;
+    v.z += v.x*v.y;
+    v = v ^ (v>>16u);
+    v.x += v.y*v.z;
+    v.y += v.z*v.x;
+    v.z += v.x*v.y;
+    return v;
+}
+)GLSL";
+
 const char* importanceSampleGgxD =
 R"GLSL(
 vec3 importanceSampleGgxD(vec2 seed, float rough2, vec3 N)
@@ -154,6 +170,23 @@ vec3 importanceSampleGgxD(vec2 seed, float rough2, vec3 N)
     vec3 TangentY = cross( N, TangentX );
     // Tangent to world space
     return TangentX * H.x + TangentY * H.y + N * H.z;
+}
+)GLSL";
+
+const char* uniformSample =
+R"GLSL(
+vec3 uniformSample(vec2 seed, vec3 N)
+{
+    float phi = 2 * PI * seed.x;
+    float r = sqrt(1 - seed.y*seed.y);
+    vec3 v = vec3(r*cos(phi), seed.y, r*sin(phi));
+    v = normalize(v);
+    vec3 up = vec3(0, 1, 0);
+    if(dot(up, N) > 0.99)
+        up = vec3(1, 0, 0);
+    vec3 X = normalize(cross(N, up));
+    vec3 Z = cross(X, N);
+    return X * v.x + N * v.y + Z * v.z;
 }
 )GLSL";
 
