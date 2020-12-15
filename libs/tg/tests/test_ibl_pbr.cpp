@@ -33,7 +33,7 @@ static u32 s_envProg, s_iblProg, s_rtProg;
 static struct { i32 modelViewProj, cubemap, gammaExp; } s_envShadUnifLocs;
 struct CommonUnifLocs { i32 camPos, model, modelViewProj, albedo, rough2, metallic, F0, convolutedEnv, lut; };
 static struct : public CommonUnifLocs {  } s_iblUnifLocs;
-static struct : public CommonUnifLocs { i32 numSamples, fresnelTerm, geomTerm, ndfTerm, test; } s_rtUnifLocs;
+static struct : public CommonUnifLocs { i32 mode, numSamples, fresnelTerm, geomTerm, ndfTerm, test; } s_rtUnifLocs;
 static float s_splitterPercent = 0.5;
 static bool s_draggingSplitter = false;
 static float s_rough = 0.1f;
@@ -104,6 +104,7 @@ uniform vec3 u_F0;
 uniform samplerCube u_convolutedEnv;
 uniform sampler2D u_lut;
 uniform uint u_numSamples = 16u;
+uniform uint u_mode = 0u;
 
 uniform float u_fresnelTerm;
 uniform float u_geomTerm;
@@ -159,7 +160,7 @@ vec3 visualizeSamples()
     return vec3(min(1, c));
 }
 
-vec3 bruteForce()
+vec3 calcLighting()
 {
     vec3 N = normalize(v_normal);
     vec3 V = normalize(u_camPos - v_pos);
@@ -171,61 +172,58 @@ vec3 bruteForce()
     vec3 k_diff = (1 - k_spec) * (1 - u_metallic);
 
     vec3 color = vec3(0.0, 0.0, 0.0);
-    for(uint iSample = 0u; iSample < u_numSamples; iSample++)
+
+    if(u_mode == 0u) // uniform sampling
     {
-        uvec3 seedUInt = pcg_uvec3_uvec3(uvec3(gl_FragCoord.x, gl_FragCoord.y, iSample));
-        vec2 seed2 = vec2(makeFloat01(seedUInt.x), makeFloat01(seedUInt.y));
-        vec3 L = uniformSample(seed2, N);
-        vec3 H = normalize(V + L);
-        vec3 env = textureLod(u_convolutedEnv, L, 0.0).rgb;
+        for(uint iSample = 0u; iSample < u_numSamples; iSample++)
+        {
+            uvec3 seedUInt = pcg_uvec3_uvec3(uvec3(gl_FragCoord.x, gl_FragCoord.y, iSample));
+            vec2 seed2 = vec2(makeFloat01(seedUInt.x), makeFloat01(seedUInt.y));
+            vec3 L = uniformSample(seed2, N);
+            vec3 H = normalize(V + L);
+            vec3 env = textureLod(u_convolutedEnv, L, 0.0).rgb;
 
-        float NoL = max(0.0001, dot(N, L));
-        float NoH = max(0.0001, dot(N, H));
-        float NoH2 = NoH * NoH;
-        float rough4 = u_rough2*u_rough2;
-        float q = NoH2 * (rough4 - 1.0) + 1.0;
-        float D = rough4 / (PI * q*q);
-            D = mix(1.0, D, u_ndfTerm);
-        float G = ggx_G_smith(NoV, NoL, u_rough2);
-            G = mix(1.0, G, u_geomTerm);
-        vec3 fr = F * G * D / (4 * NoV * NoL);
-        vec3 diffuse = k_diff * u_albedo / PI;
-        color += (diffuse + fr) * env * NoL;
+            float NoL = max(0.0001, dot(N, L));
+            float NoH = max(0.0001, dot(N, H));
+            float NoH2 = NoH * NoH;
+            float rough4 = u_rough2*u_rough2;
+            float q = NoH2 * (rough4 - 1.0) + 1.0;
+            float D = rough4 / (PI * q*q);
+                D = mix(1.0, D, u_ndfTerm);
+            float G = ggx_G_smith(NoV, NoL, u_rough2);
+                G = mix(1.0, G, u_geomTerm);
+            vec3 fr = F * G * D / (4 * NoV * NoL);
+            vec3 diffuse = k_diff * u_albedo / PI;
+            color += (diffuse + fr) * env * NoL;
+        }
+        color *= 2*PI / float(u_numSamples);
     }
-    color *= 2*PI / float(u_numSamples);
-
+    else // importance sampling
+    {
+        vec3 specular = vec3(0.0, 0.0, 0.0);
+        for(uint iSample = 0u; iSample < u_numSamples; iSample++)
+        {
+            vec2 seed2 = hammersleyVec2(iSample, u_numSamples);
+            vec3 H = importanceSampleGgxD(seed2, u_rough2, N);
+            vec3 L = reflect(-V, H);
+            vec3 env = textureLod(u_convolutedEnv, L, 0.0).rgb;
+            float NoL = max(0.0001, dot(N, L));
+            float G = ggx_G_smith(NoV, NoL, u_rough2);
+                G = mix(1.0, G, u_geomTerm);
+            specular += env*G* dot(L, H) / (NoL * dot(N, H));
+        }
+        specular /= float(u_numSamples) / (2*PI);
+        color = specular;
+    }
+    
     return color;
 }
 
 void main()
 {
-    vec3 N = normalize(v_normal);
-    vec3 V = normalize(u_camPos - v_pos);
-    float NoV = max(0.0001, dot(N, V));
-
-    vec3 F0 = mix(vec3(0.04), u_albedo, u_metallic);
-    vec3 F = fresnelSchlick(NoV, F0);
-        F = mix(vec3(1.0), F, u_fresnelTerm);
-    vec3 k_spec = F;
-    vec3 k_diff = (1 - k_spec) * (1 - u_metallic);
-
-    vec3 specular = vec3(0.0, 0.0, 0.0);
-    for(uint iSample = 0u; iSample < u_numSamples; iSample++)
-    {
-        vec2 seed2 = hammersleyVec2(iSample, u_numSamples);
-        vec3 H = importanceSampleGgxD(seed2, u_rough2, N);
-        vec3 L = reflect(-V, H);
-        vec3 env = textureLod(u_convolutedEnv, L, 0.0).rgb;
-        float NoL = max(0.0001, dot(N, L));
-        float G = ggx_G_smith(NoV, NoL, u_rough2);
-            G = mix(1.0, G, u_geomTerm);
-        specular += env*F*NoL;
-    }
-    specular /= float(u_numSamples) / (2*PI);
-
-    vec3 color = pow(specular, vec3(1.0/2.2));
+    vec3 color = calcLighting();
+    color = pow(color, vec3(1.0/2.2));
     o_color = vec4(color, 1.0);
-    o_color = vec4(bruteForce(), 1.0);
     //o_color = vec4(visualizeSamples(), 1.0);
 }
 )GLSL";
@@ -478,6 +476,7 @@ bool test_iblPbr()
                     glGetUniformLocation(progs[i], "u_lut"),
                 };
             }
+            s_rtUnifLocs.mode = glGetUniformLocation(s_rtProg, "u_mode");
             s_rtUnifLocs.numSamples = glGetUniformLocation(s_rtProg, "u_numSamples");
             s_rtUnifLocs.fresnelTerm = glGetUniformLocation(s_rtProg, "u_fresnelTerm");
             s_rtUnifLocs.geomTerm = glGetUniformLocation(s_rtProg, "u_geomTerm");
@@ -551,8 +550,9 @@ bool test_iblPbr()
         glEnable(GL_DEPTH_TEST);
         glDepthMask(GL_TRUE);
         //glClear(GL_DEPTH_BUFFER_BIT);
-        // draw left part of the splitter
-        {
+        // draw left part of the splitter        
+
+        /*{ // draw with prefiltered textures
             glScissor(0, 0, splitterX, screenH);
             glUseProgram(s_iblProg);
             uploadCommonUniforms(s_iblUnifLocs);
@@ -560,13 +560,13 @@ bool test_iblPbr()
             glDrawElements(GL_TRIANGLES, s_objNumInds, GL_UNSIGNED_INT, nullptr);
             glClearColor(1, 0, 0, 1);
             //glClear(GL_COLOR_BUFFER_BIT);
-        }
+        }*/
 
-        // draw right side of the splitter
         {
-            glScissor(splitterX+splitterLineWidth, 0, screenW - (splitterX+splitterLineWidth), screenH);
+            glScissor(0, 0, splitterX, screenH);
             glUseProgram(s_rtProg);
             uploadCommonUniforms(s_rtUnifLocs);
+            glUniform1ui(s_rtUnifLocs.mode, 0); // uniform sampling
             glUniform1ui(s_rtUnifLocs.numSamples, s_numSamples);
             if(s_rtUnifLocs.fresnelTerm != -1)
                 glUniform1f(s_rtUnifLocs.fresnelTerm, s_enableFresnelTerm);
@@ -578,8 +578,25 @@ bool test_iblPbr()
                 glUniform1f(s_rtUnifLocs.test, s_testUnif);
             glBindVertexArray(s_objVao);
             glDrawElements(GL_TRIANGLES, s_objNumInds, GL_UNSIGNED_INT, nullptr);
-            glClearColor(0, 0, 1, 1);
-            //glClear(GL_COLOR_BUFFER_BIT);
+        }
+
+        // draw right side of the splitter
+        {
+            glScissor(splitterX+splitterLineWidth, 0, screenW - (splitterX+splitterLineWidth), screenH);
+            glUseProgram(s_rtProg);
+            uploadCommonUniforms(s_rtUnifLocs);
+            glUniform1ui(s_rtUnifLocs.mode, 1); // importance sampling
+            glUniform1ui(s_rtUnifLocs.numSamples, s_numSamples);
+            if(s_rtUnifLocs.fresnelTerm != -1)
+                glUniform1f(s_rtUnifLocs.fresnelTerm, s_enableFresnelTerm);
+            if(s_rtUnifLocs.geomTerm != -1)
+                glUniform1f(s_rtUnifLocs.geomTerm, s_enableGeomTerm);
+            if(s_rtUnifLocs.ndfTerm != -1)
+                glUniform1f(s_rtUnifLocs.ndfTerm, s_enableNdfTerm);
+            if(s_rtUnifLocs.test != -1)
+                glUniform1f(s_rtUnifLocs.test, s_testUnif);
+            glBindVertexArray(s_objVao);
+            glDrawElements(GL_TRIANGLES, s_objNumInds, GL_UNSIGNED_INT, nullptr);
         }
 
         // draw splitter line

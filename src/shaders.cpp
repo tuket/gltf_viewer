@@ -168,8 +168,8 @@ void findAllUnifLocations(ShaderData& data)
    data.unifLocs.modelMat3 = glGetUniformLocation(data.prog, "u_modelMat3");
    data.unifLocs.modelViewProj = glGetUniformLocation(data.prog, "u_modelViewProj");
    data.unifLocs.color = glGetUniformLocation(data.prog, "u_color");
-//   data.unifLocs.colorTexture = glGetUniformLocation(data.prog, "u_colorTex");
-//   data.unifLocs.normalTexture = glGetUniformLocation(data.prog, "u_normalTex");
+   data.unifLocs.colorTexture = glGetUniformLocation(data.prog, "u_colorTexture");
+   data.unifLocs.normalTexture = glGetUniformLocation(data.prog, "u_normalTexture");
 }
 
 bool buildShaders()
@@ -203,11 +203,12 @@ bool buildShaders()
             return false;
         }
         findAllUnifLocations(data);
+        glDetachShader(data.prog, vertShader);
+        glDetachShader(data.prog, fragShader);
         glDeleteShader(fragShader);
         glUseProgram(data.prog);
-        glUniform1i(glGetUniformLocation(data.prog, "u_colorTexture"), (i32)ETexUnit::ALBEDO);
-        glUniform1i(glGetUniformLocation(data.prog, "u_normalTexture"), (i32)ETexUnit::NORMAL);
-        glUniform1i(glGetUniformLocation(data.prog, "u_metallicRoughnessTexture"), (i32)ETexUnit::PHYSICS);
+        glUniform1i(data.unifLocs.colorTexture, int(ETexUnit::ALBEDO));
+        glUniform1i(data.unifLocs.normalTexture, int(ETexUnit::NORMAL));
     }
 
     { // shader vert color

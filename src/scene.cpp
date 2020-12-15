@@ -136,8 +136,12 @@ static void freeSceneGpuResources()
 {
     using namespace gpu;
     glDeleteBuffers(bos.size(), bos.begin());
+    bos.resize(0);
     glDeleteVertexArrays(vaos.size(), vaos.begin());
+    vaos.resize(0);
+    meshPrimsVaos.resize(0);
     glDeleteTextures(textures.size(), textures.begin());
+    textures.resize(0);
 }
 
 void createBasicTextures()
@@ -549,7 +553,7 @@ static void drawSceneNodeRecursive(const cgltf_node& node, const glm::mat4& view
                     glUniform4fv(gpu::shaderPbrMetallic().unifLocs.color,
                                  1, material.pbr_metallic_roughness.base_color_factor);
                     if(auto tex = material.pbr_metallic_roughness.base_color_texture.texture)
-                        ;
+                        glBindTexture(GL_TEXTURE_2D, gpu::textures[getTextureInd(tex)]);
                     else
                         glBindTexture(GL_TEXTURE_2D, gpu::whiteTexture);
                 }
@@ -559,7 +563,7 @@ static void drawSceneNodeRecursive(const cgltf_node& node, const glm::mat4& view
 
                 glActiveTexture(GL_TEXTURE0 + (u32)ETexUnit::NORMAL);
                 if(auto tex = material.normal_texture.texture)
-                    ;
+                    glBindTexture(GL_TEXTURE_2D, gpu::textures[getTextureInd(tex)]);
                 else
                     glBindTexture(GL_TEXTURE_2D, gpu::blueTexture);
 
