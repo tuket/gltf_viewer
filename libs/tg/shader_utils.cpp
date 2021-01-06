@@ -147,21 +147,22 @@ uvec3 pcg_uvec3_uvec3(uvec3 v)
 
 const char* importanceSampleGgxD =
 R"GLSL(
+#if 1
 vec3 importanceSampleGgxD(vec2 seed, float rough2, vec3 N)
 {
     float phi = 2.0 * PI * seed.x;
     float cosTheta = sqrt((1.0 - seed.y) / (1 + (rough2*rough2 - 1) * seed.y));
     float sinTheta = sqrt(1.0 - cosTheta*cosTheta);
-    /*vec3 h;
+    vec3 h;
     h.x = sinTheta * cos(phi);
     h.y = sinTheta * sin(phi);
     h.z = cosTheta;
     vec3 up = abs(N.y) < 0.99 ? vec3(0, 1, 0) : vec3(1, 0, 0);
     vec3 tangentX = normalize(cross(up, N));
     vec3 tangentZ = cross(tangentX, N);
-    return h.x * tangentX + h.y * up + h.z * tangentZ;*/
+    return h.x * tangentX + h.y * up + h.z * tangentZ;
 
-    vec3 H;
+    /*vec3 H;
     H.x = sinTheta * cos( phi );
     H.y = sinTheta * sin( phi );
     H.z = cosTheta;
@@ -169,8 +170,29 @@ vec3 importanceSampleGgxD(vec2 seed, float rough2, vec3 N)
     vec3 TangentX = normalize( cross( UpVector , N ) );
     vec3 TangentY = cross( N, TangentX );
     // Tangent to world space
-    return TangentX * H.x + TangentY * H.y + N * H.z;
+    return TangentX * H.x + TangentY * H.y + N * H.z;*/
 }
+#else
+vec3 importanceSampleGgxD(vec2 seed, float rough2, vec3 V_)
+{
+    // stretch view
+    vec3 V = normalize(vec3(rough2 * V_.x, rough2 * V_.y, V_.z));
+    // orthonormal basis
+    vec3 T1 = (V.z < 0.999) ? normalize(cross(V, vec3(0,0,1))) : vec3(1,0,0);
+    vec3 T2 = cross(T1, V);
+    // sample point with polar coordinates (r, phi)
+    float a = 1.0 / (1.0 + V.z);
+    float r = sqrt(seed.x);
+    float phi = (seed.y<a) ? seed.y/a * PI : PI + (seed.y-a)/(1.0-a) * PI;
+    float P1 = r*cos(phi);
+    float P2 = r*sin(phi)*((seed.y<a) ? 1.0 : V.z);
+    // compute normal
+    vec3 N = P1*T1 + P2*T2 + sqrt(max(0.0, 1.0 - P1*P1 - P2*P2))*V;
+    // unstretch
+    N = normalize(vec3(rough2*N.x, rough2*N.y, max(0.0, N.z)));
+    return N;
+}
+#endif
 )GLSL";
 
 const char* uniformSample =

@@ -518,11 +518,6 @@ void uploadCubemapTexture(u32 mipLevel, u32 w, u32 h, u32 internalFormat, u32 da
     upload(GL_TEXTURE_CUBE_MAP_POSITIVE_Z, ps * (w*side + side));
 }
 
-u32 downscaledTexture(u32 inTex, u32 inW, u32 inH, u32 outW, u32 outH)
-{
-
-}
-
 void createGgxLutTexShader(u32& prog, u32& vertShad, u32& fragShad, u32& numSamplesUnifLoc)
 {
     const char* vertSrcs[] = {

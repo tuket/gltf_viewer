@@ -26,24 +26,60 @@ static char s_buffer[4*1024];
 static bool s_mousePressed = false;
 static glm::vec2 s_prevMouse;
 static OrbitCameraInfo s_orbitCam;
+static u32 s_fbo;
+static u32 s_rt[2], s_depthRbo; // render textures
 static struct { u32 envmap, convolution; } s_textures;
+static u32 s_screenQuadVbo, s_screenQuadVao;
 static u32 s_envCubeVao, s_envCubeVbo;
 static u32 s_objVao, s_objVbo, s_objEbo, s_objNumInds;
-static u32 s_envProg, s_iblProg, s_rtProg;
+static u32 s_splatProg, s_envProg, s_iblProg, s_rtProg;
+static struct { i32 tex; } s_splatUnifLocs;
 static struct { i32 modelViewProj, cubemap, gammaExp; } s_envShadUnifLocs;
 struct CommonUnifLocs { i32 camPos, model, modelViewProj, albedo, rough2, metallic, F0, convolutedEnv, lut; };
 static struct : public CommonUnifLocs {  } s_iblUnifLocs;
-static struct : public CommonUnifLocs { i32 mode, numSamples, fresnelTerm, geomTerm, ndfTerm, test; } s_rtUnifLocs;
+static struct : public CommonUnifLocs {
+    i32 numSamples, numFramesWithoutChanging,
+        fresnelTerm, geomTerm, ndfTerm, test;
+} s_rtUnifLocs;
 static float s_splitterPercent = 0.5;
 static bool s_draggingSplitter = false;
 static float s_rough = 0.1f;
-static u32 s_numSamples = 64;
+static u32 s_numSamplesPerFrame = 64;
+static u32 s_numFramesWithoutChanging = 0; // the number of frames we have been drawing the exact same thing, we use this to compute the blenfing factor inorder to apply temporal antialiasing
 static glm::vec3 s_albedo = {0.8f, 0.8f, 0.8f};
 static float s_metallic = 0.99f;
 static float s_enableFresnelTerm = 1;
 static float s_enableGeomTerm = 1;
 static float s_enableNdfTerm = 1;
 static float s_testUnif = 0;
+
+static const char k_splatVertShadSrc[] =
+R"GLSL(
+layout (location = 0) in vec2 a_pos;
+
+out vec2 v_tc;
+
+void main()
+{
+    v_tc = 0.5 + 0.5 * a_pos ;
+    gl_Position = vec4(a_pos, 0, 1);
+}
+)GLSL";
+
+static const char k_splatFragShadSrc[] =
+R"GLSL(
+layout (location = 0) out vec4 o_color;
+
+in vec2 v_tc;
+
+uniform sampler2D u_tex;
+
+void main()
+{
+    vec4 color = texture(u_tex, v_tc);
+    o_color = vec4(pow(color.rgb, vec3(1/2.2)), color.a);
+}
+)GLSL";
 
 static const char k_vertShadSrc[] =
 R"GLSL(
@@ -94,7 +130,8 @@ void main()
 
 static const char k_rtFragShadSrc[] = // uses ray tracing to sample the environment
 R"GLSL(
-layout (location = 0) out vec4 o_color;
+layout (location = 0) out vec4 o_uniform;
+layout (location = 1) out vec4 o_importance;
 
 uniform vec3 u_camPos;
 uniform vec3 u_albedo;
@@ -104,7 +141,7 @@ uniform vec3 u_F0;
 uniform samplerCube u_convolutedEnv;
 uniform sampler2D u_lut;
 uniform uint u_numSamples = 16u;
-uniform uint u_mode = 0u;
+uniform uint u_numFramesWithoutChanging;
 
 uniform float u_fresnelTerm;
 uniform float u_geomTerm;
@@ -160,7 +197,7 @@ vec3 visualizeSamples()
     return vec3(min(1, c));
 }
 
-vec3 calcLighting()
+void calcLighting()
 {
     vec3 N = normalize(v_normal);
     vec3 V = normalize(u_camPos - v_pos);
@@ -168,16 +205,18 @@ vec3 calcLighting()
 
     vec3 F0 = mix(vec3(0.04), u_albedo, u_metallic);
     vec3 F = fresnelSchlick(NoV, F0);
+        F = mix(vec3(1.0), F, u_fresnelTerm);
     vec3 k_spec = F;
     vec3 k_diff = (1 - k_spec) * (1 - u_metallic);
 
-    vec3 color = vec3(0.0, 0.0, 0.0);
 
-    if(u_mode == 0u) // uniform sampling
+    // uniform sampling
     {
+        vec3 color = vec3(0.0, 0.0, 0.0);
         for(uint iSample = 0u; iSample < u_numSamples; iSample++)
         {
-            uvec3 seedUInt = pcg_uvec3_uvec3(uvec3(gl_FragCoord.x, gl_FragCoord.y, iSample));
+            uint sampleId = iSample + u_numSamples * u_numFramesWithoutChanging;
+            uvec3 seedUInt = pcg_uvec3_uvec3(uvec3(gl_FragCoord.x, gl_FragCoord.y, sampleId));
             vec2 seed2 = vec2(makeFloat01(seedUInt.x), makeFloat01(seedUInt.y));
             vec3 L = uniformSample(seed2, N);
             vec3 H = normalize(V + L);
@@ -197,33 +236,43 @@ vec3 calcLighting()
             color += (diffuse + fr) * env * NoL;
         }
         color *= 2*PI / float(u_numSamples);
+        o_uniform = vec4(color, 1);
     }
-    else // importance sampling
+    // importance sampling
     {
+        //uint validSamples = 0u;
         vec3 specular = vec3(0.0, 0.0, 0.0);
         for(uint iSample = 0u; iSample < u_numSamples; iSample++)
         {
-            vec2 seed2 = hammersleyVec2(iSample, u_numSamples);
+            //vec2 seed2 = hammersleyVec2(iSample, u_numSamples);
+            uint sampleId = iSample + u_numSamples * u_numFramesWithoutChanging;
+            uvec3 seedUInt = pcg_uvec3_uvec3(uvec3(gl_FragCoord.x, gl_FragCoord.y, sampleId));
+            seedUInt.xy += seedUInt.x;
+            vec2 seed2 = vec2(makeFloat01(seedUInt.x), makeFloat01(seedUInt.y));
             vec3 H = importanceSampleGgxD(seed2, u_rough2, N);
             vec3 L = reflect(-V, H);
-            vec3 env = textureLod(u_convolutedEnv, L, 0.0).rgb;
-            float NoL = max(0.0001, dot(N, L));
-            float G = ggx_G_smith(NoV, NoL, u_rough2);
-                G = mix(1.0, G, u_geomTerm);
-            specular += env*G* dot(L, H) / (NoL * dot(N, H));
+            if(dot(N, L) > 0) {
+                vec3 env = textureLod(u_convolutedEnv, L, 0.0).rgb;
+                float NoL = max(0.0001, dot(N, L));
+                float NoH = max(0.0001, dot(N, H));
+                float G = ggx_G_smith(NoV, NoL, u_rough2);
+                    //G = mix(1.0, G, u_geomTerm);
+                specular += env * F*G* dot(L, H) / (NoL * NoH);
+                //validSamples++;
+            }
+            /*if((seed2.x >= 0 && seed2.x <= 1 && seed2.y >= 0 && seed2.y <= 1) == false) {
+                o_importance = vec4(11111, 0, 0, 1);
+                return;
+            }*/
         }
-        specular /= float(u_numSamples) / (2*PI);
-        color = specular;
-    }
-    
-    return color;
+        specular /= float(u_numSamples);
+        o_importance = vec4(specular, 1);
+    }    
 }
 
 void main()
 {
-    vec3 color = calcLighting();
-    color = pow(color, vec3(1.0/2.2));
-    o_color = vec4(color, 1.0);
+    calcLighting();
     //o_color = vec4(visualizeSamples(), 1.0);
 }
 )GLSL";
@@ -231,18 +280,21 @@ void main()
 static void drawGui()
 {
     ImGui::Begin("giterator", 0, 0);
-    ImGui::SliderFloat("Roughness", &s_rough, 0, 1.f, "%.5f", 1);
     {
-        int numSamples = s_numSamples;
+        bool gottaRefresh = false;
+        gottaRefresh |= ImGui::SliderFloat("Roughness", &s_rough, 0, 1.f, "%.5f", 1);
+        int numSamples = s_numSamplesPerFrame;
         constexpr int maxSamples = 1024;
-        ImGui::SliderInt("Samples", &numSamples, 1, maxSamples);
-        s_numSamples = tl::clamp(numSamples, 1, maxSamples);
-        ImGui::ColorEdit3("Albedo", &s_albedo[0]);
-        ImGui::SliderFloat("Metallic", &s_metallic, 0.f, 1.f);
-        ImGui::SliderFloat("Enable fresnel term", &s_enableFresnelTerm, 0, 1);
-        ImGui::SliderFloat("Enable geom term", &s_enableGeomTerm, 0, 1);
-        ImGui::SliderFloat("Enable NDF term", &s_enableNdfTerm, 0, 1);
-        ImGui::SliderFloat("Test", &s_testUnif, 0, 1);
+        ImGui::SliderInt("Samples per frame", &numSamples, 1, maxSamples);
+        s_numSamplesPerFrame = tl::clamp(numSamples, 1, maxSamples);
+        gottaRefresh |= ImGui::ColorEdit3("Albedo", &s_albedo[0]);
+        gottaRefresh |= ImGui::SliderFloat("Metallic", &s_metallic, 0.f, 1.f);
+        gottaRefresh |= ImGui::SliderFloat("Enable fresnel term", &s_enableFresnelTerm, 0, 1);
+        gottaRefresh |= ImGui::SliderFloat("Enable geom term", &s_enableGeomTerm, 0, 1);
+        gottaRefresh |= ImGui::SliderFloat("Enable NDF term", &s_enableNdfTerm, 0, 1);
+        gottaRefresh |= ImGui::SliderFloat("Test", &s_testUnif, 0, 1);
+        if(gottaRefresh)
+            s_numFramesWithoutChanging = 0;
     }
     ImGui::End();
 }
@@ -261,6 +313,8 @@ static bool hoveringSplitter(GLFWwindow* window)
 bool test_iblPbr()
 {
     GLFWwindow* window = simpleInitGlfwGL();
+    int screenW, screenH;
+    glfwGetFramebufferSize(window, &screenW, &screenH);
     s_splitterCursor = glfwCreateStandardCursor(GLFW_HRESIZE_CURSOR);
     defer(glfwDestroyCursor(s_splitterCursor));
 
@@ -297,6 +351,8 @@ bool test_iblPbr()
             else {
                 const glm::vec2 d = glm::vec2{x, y} - s_prevMouse;
                 s_orbitCam.applyMouseDrag(d, {windowW, windowH});
+                if(x != 0)
+                    s_numFramesWithoutChanging = 0;
             }
         }
         const bool showSplitterCursor = s_draggingSplitter || hoveringSplitter(window);
@@ -314,6 +370,18 @@ bool test_iblPbr()
         if (ImGui::GetIO().WantCaptureMouse)
             return;
         s_orbitCam.applyMouseWheel(dy);
+        if(dy != 0)
+            s_numFramesWithoutChanging = 0;
+    });
+    glfwSetWindowSizeCallback(window, [](GLFWwindow* /*window*/, int width, int height)
+    {
+        s_numFramesWithoutChanging = 0;
+        for(int i = 0; i < 2; i++) {
+            glBindTexture(GL_TEXTURE_2D, s_rt[i]);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, width, height, 0, GL_RGBA, GL_FLOAT, nullptr);
+        }
+        glBindRenderbuffer(GL_RENDERBUFFER, s_depthRbo);
+        glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, width, height);
     });
 
     {
@@ -334,6 +402,29 @@ bool test_iblPbr()
     glEnable(GL_TEXTURE_CUBE_MAP_SEAMLESS);
     glEnable(GL_DEPTH_TEST);
     glDepthMask(GL_TRUE);
+
+    // init FBO
+    glGenFramebuffers(1, &s_fbo);
+    glGenTextures(2, s_rt);
+    glBindFramebuffer(GL_FRAMEBUFFER, s_fbo);
+    for(int i = 0; i < 2; i++) {
+        glBindTexture(GL_TEXTURE_2D, s_rt[i]);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, screenW, screenH, 0, GL_RGBA, GL_FLOAT, nullptr);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0 + i, GL_TEXTURE_2D, s_rt[i], 0);
+    }
+    {
+        glGenRenderbuffers(1, &s_depthRbo);
+        glBindRenderbuffer(GL_RENDERBUFFER, s_depthRbo);
+        glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, screenW, screenH);
+        //glBindRenderbuffer(GL_RENDERBUFFER, 0);
+        glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, s_depthRbo);
+    }
+    GLenum fboDrawBuffers[] = {GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1};
+    glDrawBuffers(tl::size(fboDrawBuffers), fboDrawBuffers);
+    if(glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+        printf("The framebuffer is not camplete\n");
 
     // init textures
     glGenTextures(2, &s_textures.envmap);
@@ -367,6 +458,18 @@ bool test_iblPbr()
     }
     defer(glDeleteTextures(2, &s_textures.envmap));
 
+    // init screen quad
+    glGenVertexArrays(1, &s_screenQuadVao);
+    glBindVertexArray(s_screenQuadVao);
+    glGenBuffers(1, &s_screenQuadVbo);
+    glBindBuffer(GL_ARRAY_BUFFER, s_screenQuadVbo);
+    static const float k_screenQuadVertData[] = { // intended to be drawn as GL_TRIANGLE_FAN
+        -1,-1,  +1,-1,  +1,+1,  -1,+1
+    };
+    glBufferData(GL_ARRAY_BUFFER, sizeof(k_screenQuadVertData), k_screenQuadVertData, GL_STATIC_DRAW);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, nullptr);
+
     // init environment cube mesh
     glGenVertexArrays(1, &s_envCubeVao);
     defer(glDeleteVertexArrays(1, &s_envCubeVao));
@@ -379,7 +482,7 @@ bool test_iblPbr()
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, nullptr);
 
     // init object mesh
-    tg::createIcoSphereMesh(s_objVao, s_objVbo, s_objEbo, s_objNumInds, 4);
+    tg::createIcoSphereMesh(s_objVao, s_objVbo, s_objEbo, s_objNumInds, 3);
     defer(
         glDeleteVertexArrays(1, &s_objVao);
         glDeleteBuffers(1, &s_objVbo);
@@ -393,6 +496,42 @@ bool test_iblPbr()
     glUseProgram(s_envProg);
     glUniform1i(s_envShadUnifLocs.cubemap, 0);
     glUniform1f(s_envShadUnifLocs.gammaExp, 1.f / 2.2f);
+
+    s_splatProg = glCreateProgram();
+    {
+        const u32 vertShad = glCreateShader(GL_VERTEX_SHADER);
+        defer(glDeleteShader(vertShad));
+        const char* vertSrcs[] = {tg::srcs::header, k_splatVertShadSrc};
+        glShaderSource(vertShad, 2, vertSrcs, nullptr);
+        glCompileShader(vertShad);
+        if(const char* errMsg = tg::getShaderCompileErrors(vertShad, s_buffer)) {
+            tl::println("Error compiling vertex shader:\n", errMsg);
+            return 1;
+        }
+
+        const u32 fragShad = glCreateShader(GL_FRAGMENT_SHADER);
+        defer(glDeleteShader(fragShad));
+        const char* fragSrcs[] = {tg::srcs::header, k_splatFragShadSrc};
+        glShaderSource(fragShad, 2, fragSrcs, nullptr);
+        glCompileShader(fragShad);
+        if(const char* errMsg = tg::getShaderCompileErrors(vertShad, s_buffer)) {
+            tl::println("Error compiling fragment shader:\n", errMsg);
+            return 1;
+        }
+
+        glAttachShader(s_splatProg, vertShad);
+        glAttachShader(s_splatProg, fragShad);
+        glLinkProgram(s_splatProg);
+        if(const char* errMsg = tg::getShaderLinkErrors(s_splatProg, s_buffer)) {
+            tl::println("Error linking program:\n", errMsg);
+            return 1;
+        }
+        glDetachShader(s_splatProg, vertShad);
+        glDetachShader(s_splatProg, fragShad);
+
+        s_splatUnifLocs.tex = glGetUniformLocation(s_splatProg, "u_tex");
+    }
+    defer(glDeleteProgram(s_splatProg));
 
     s_iblProg = glCreateProgram();
     s_rtProg = glCreateProgram();
@@ -476,8 +615,8 @@ bool test_iblPbr()
                     glGetUniformLocation(progs[i], "u_lut"),
                 };
             }
-            s_rtUnifLocs.mode = glGetUniformLocation(s_rtProg, "u_mode");
             s_rtUnifLocs.numSamples = glGetUniformLocation(s_rtProg, "u_numSamples");
+            s_rtUnifLocs.numFramesWithoutChanging = glGetUniformLocation(s_rtProg, "u_numFramesWithoutChanging");
             s_rtUnifLocs.fresnelTerm = glGetUniformLocation(s_rtProg, "u_fresnelTerm");
             s_rtUnifLocs.geomTerm = glGetUniformLocation(s_rtProg, "u_geomTerm");
             s_rtUnifLocs.ndfTerm = glGetUniformLocation(s_rtProg, "u_ndfTerm");
@@ -493,7 +632,6 @@ bool test_iblPbr()
     {
         glfwPollEvents();
 
-        int screenW, screenH;
         glfwGetFramebufferSize(window, &screenW, &screenH);
         glViewport(0, 0, screenW, screenH);
 
@@ -531,26 +669,16 @@ bool test_iblPbr()
                 glUniform1i(unifLocs.convolutedEnv, 1);
         };
 
-        // draw background
-        //glEnable(GL_DEPTH_TEST);
-        //glDepthMask(GL_TRUE);
+        // start drawing to render targets
+        glBindFramebuffer(GL_FRAMEBUFFER, s_fbo);
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_ONE_MINUS_CONSTANT_ALPHA, GL_CONSTANT_ALPHA); // this is for accumulating frames to make samo sort of temporal antialiasing
+        glBlendColor(0, 0, 0, float(s_numFramesWithoutChanging) / (1 + s_numFramesWithoutChanging));
         glScissor(0, 0, screenW, screenH);
-        glClear(GL_DEPTH_BUFFER_BIT);
-        glDisable(GL_DEPTH_TEST); // no reading, no writing
-        {
-            glm::mat4 viewMtxWithoutTranslation = viewMtx;
-            viewMtxWithoutTranslation[3][0] = viewMtxWithoutTranslation[3][1] = viewMtxWithoutTranslation[3][2] = 0;
-            const glm::mat4 viewProjMtx = projMtx * viewMtxWithoutTranslation;
-            glUseProgram(s_envProg);
-            glUniformMatrix4fv(s_envShadUnifLocs.modelViewProj, 1, GL_FALSE, &viewProjMtx[0][0]);
-            glBindVertexArray(s_envCubeVao);
-            glDrawArrays(GL_TRIANGLES, 0, 6*6);
-        }
 
         glEnable(GL_DEPTH_TEST);
         glDepthMask(GL_TRUE);
-        //glClear(GL_DEPTH_BUFFER_BIT);
-        // draw left part of the splitter        
+        glClear(GL_DEPTH_BUFFER_BIT);
 
         /*{ // draw with prefiltered textures
             glScissor(0, 0, splitterX, screenH);
@@ -562,12 +690,16 @@ bool test_iblPbr()
             //glClear(GL_COLOR_BUFFER_BIT);
         }*/
 
-        {
-            glScissor(0, 0, splitterX, screenH);
+        glEnable(GL_CULL_FACE);
+        { // draw with uniform sampling and importance sampling
+            if(s_numFramesWithoutChanging == 0) {
+                glClearColor(0,0,0,0);
+                glClear(GL_COLOR_BUFFER_BIT);
+            }
             glUseProgram(s_rtProg);
             uploadCommonUniforms(s_rtUnifLocs);
-            glUniform1ui(s_rtUnifLocs.mode, 0); // uniform sampling
-            glUniform1ui(s_rtUnifLocs.numSamples, s_numSamples);
+            glUniform1ui(s_rtUnifLocs.numSamples, s_numSamplesPerFrame);
+            glUniform1ui(s_rtUnifLocs.numFramesWithoutChanging, s_numFramesWithoutChanging);
             if(s_rtUnifLocs.fresnelTerm != -1)
                 glUniform1f(s_rtUnifLocs.fresnelTerm, s_enableFresnelTerm);
             if(s_rtUnifLocs.geomTerm != -1)
@@ -580,24 +712,38 @@ bool test_iblPbr()
             glDrawElements(GL_TRIANGLES, s_objNumInds, GL_UNSIGNED_INT, nullptr);
         }
 
-        // draw right side of the splitter
+        glDisable(GL_CULL_FACE);
+        // now we start drawing to the screen
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+        // draw background
+        glDisable(GL_DEPTH_TEST); // no reading, no writing
+        glDisable(GL_BLEND);
         {
-            glScissor(splitterX+splitterLineWidth, 0, screenW - (splitterX+splitterLineWidth), screenH);
-            glUseProgram(s_rtProg);
-            uploadCommonUniforms(s_rtUnifLocs);
-            glUniform1ui(s_rtUnifLocs.mode, 1); // importance sampling
-            glUniform1ui(s_rtUnifLocs.numSamples, s_numSamples);
-            if(s_rtUnifLocs.fresnelTerm != -1)
-                glUniform1f(s_rtUnifLocs.fresnelTerm, s_enableFresnelTerm);
-            if(s_rtUnifLocs.geomTerm != -1)
-                glUniform1f(s_rtUnifLocs.geomTerm, s_enableGeomTerm);
-            if(s_rtUnifLocs.ndfTerm != -1)
-                glUniform1f(s_rtUnifLocs.ndfTerm, s_enableNdfTerm);
-            if(s_rtUnifLocs.test != -1)
-                glUniform1f(s_rtUnifLocs.test, s_testUnif);
-            glBindVertexArray(s_objVao);
-            glDrawElements(GL_TRIANGLES, s_objNumInds, GL_UNSIGNED_INT, nullptr);
+            glm::mat4 viewMtxWithoutTranslation = viewMtx;
+            viewMtxWithoutTranslation[3][0] = viewMtxWithoutTranslation[3][1] = viewMtxWithoutTranslation[3][2] = 0;
+            const glm::mat4 viewProjMtx = projMtx * viewMtxWithoutTranslation;
+            glUseProgram(s_envProg);
+            glUniformMatrix4fv(s_envShadUnifLocs.modelViewProj, 1, GL_FALSE, &viewProjMtx[0][0]);
+            glBindVertexArray(s_envCubeVao);
+            glDrawArrays(GL_TRIANGLES, 0, 6*6);
         }
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+        // draw two sides of the splitter
+        glUseProgram(s_splatProg);
+        glUniform1i(s_splatUnifLocs.tex, 0);
+        glActiveTexture(GL_TEXTURE0);
+        glBindVertexArray(s_screenQuadVao);
+        // draw left side of the splitter
+        glScissor(0, 0, splitterX, screenH);
+        glBindTexture(GL_TEXTURE_2D, s_rt[0]);
+        glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
+        // draw right side of the splitter
+        glScissor(splitterX+splitterLineWidth, 0, screenW - (splitterX+splitterLineWidth), screenH);
+        glBindTexture(GL_TEXTURE_2D, s_rt[1]);
+        glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
 
         // draw splitter line
         {
@@ -605,6 +751,8 @@ bool test_iblPbr()
             glClearColor(0, 1, 0, 1);
             glClear(GL_COLOR_BUFFER_BIT);
         }
+
+        s_numFramesWithoutChanging++;
 
         ImGui::Render();
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
