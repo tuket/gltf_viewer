@@ -147,12 +147,12 @@ uvec3 pcg_uvec3_uvec3(uvec3 v)
 
 const char* importanceSampleGgxD =
 R"GLSL(
-#if 1
 vec3 importanceSampleGgxD(vec2 seed, float rough2, vec3 N)
 {
     float phi = 2.0 * PI * seed.x;
     float cosTheta = sqrt((1.0 - seed.y) / (1 + (rough2*rough2 - 1) * seed.y));
     float sinTheta = sqrt(1.0 - cosTheta*cosTheta);
+    #if 0
     vec3 h;
     h.x = sinTheta * cos(phi);
     h.y = sinTheta * sin(phi);
@@ -161,8 +161,8 @@ vec3 importanceSampleGgxD(vec2 seed, float rough2, vec3 N)
     vec3 tangentX = normalize(cross(up, N));
     vec3 tangentZ = cross(tangentX, N);
     return h.x * tangentX + h.y * up + h.z * tangentZ;
-
-    /*vec3 H;
+    # else
+    vec3 H;
     H.x = sinTheta * cos( phi );
     H.y = sinTheta * sin( phi );
     H.z = cosTheta;
@@ -170,29 +170,40 @@ vec3 importanceSampleGgxD(vec2 seed, float rough2, vec3 N)
     vec3 TangentX = normalize( cross( UpVector , N ) );
     vec3 TangentY = cross( N, TangentX );
     // Tangent to world space
-    return TangentX * H.x + TangentY * H.y + N * H.z;*/
+    return TangentX * H.x + TangentY * H.y + N * H.z;
+    #endif
 }
-#else
-vec3 importanceSampleGgxD(vec2 seed, float rough2, vec3 V_)
+
+vec3 importanceSampleGgxVD(vec2 seed, float rough2, vec3 N, vec3 V)
 {
+    mat3 orthoBasis; // build an ortho normal basis with N as the up direction
+    orthoBasis[1] = N;
+    orthoBasis[0] = abs(dot(N, vec3(0, 0, 1))) < 0.01 ?
+                        cross(N, vec3(1, 0, 0)) :
+                        cross(N, vec3(0, 0, 1));
+    orthoBasis[0] = normalize(orthoBasis[0]);
+    orthoBasis[2] = cross(orthoBasis[0], N);
+
+    mat3 invOrthoBasis = transpose(orthoBasis);
+    V = invOrthoBasis * V;
+
     // stretch view
-    vec3 V = normalize(vec3(rough2 * V_.x, rough2 * V_.y, V_.z));
+    V = normalize(vec3(rough2*V.x, V.y, rough2*V.z));
     // orthonormal basis
-    vec3 T1 = (V.z < 0.999) ? normalize(cross(V, vec3(0,0,1))) : vec3(1,0,0);
+    vec3 T1 = (V.y < 0.999) ? normalize(cross(V, vec3(0,0,1))) : vec3(1,0,0);
     vec3 T2 = cross(T1, V);
     // sample point with polar coordinates (r, phi)
-    float a = 1.0 / (1.0 + V.z);
+    float a = 1.0 / (1.0 + V.y);
     float r = sqrt(seed.x);
     float phi = (seed.y<a) ? seed.y/a * PI : PI + (seed.y-a)/(1.0-a) * PI;
     float P1 = r*cos(phi);
-    float P2 = r*sin(phi)*((seed.y<a) ? 1.0 : V.z);
+    float P2 = r*sin(phi)*((seed.y<a) ? 1.0 : V.y);
     // compute normal
-    vec3 N = P1*T1 + P2*T2 + sqrt(max(0.0, 1.0 - P1*P1 - P2*P2))*V;
+    vec3 h = P1*T1 + P2*T2 + sqrt(max(0.0, 1.0 - P1*P1 - P2*P2))*V;
     // unstretch
-    N = normalize(vec3(rough2*N.x, rough2*N.y, max(0.0, N.z)));
-    return N;
+    h = normalize(vec3(rough2*h.x, max(0.0, h.y), rough2*h.z));
+    return orthoBasis * h;
 }
-#endif
 )GLSL";
 
 const char* uniformSample =

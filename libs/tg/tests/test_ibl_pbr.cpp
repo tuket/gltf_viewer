@@ -38,7 +38,7 @@ static struct { i32 modelViewProj, cubemap, gammaExp; } s_envShadUnifLocs;
 struct CommonUnifLocs { i32 camPos, model, modelViewProj, albedo, rough2, metallic, F0, convolutedEnv, lut; };
 static struct : public CommonUnifLocs {  } s_iblUnifLocs;
 static struct : public CommonUnifLocs {
-    i32 numSamples, numFramesWithoutChanging,
+    i32 numSamples, numFramesWithoutChanging, importanceSamplingMode,
         fresnelTerm, geomTerm, ndfTerm, test;
 } s_rtUnifLocs;
 static float s_splitterPercent = 0.5;
@@ -46,6 +46,7 @@ static bool s_draggingSplitter = false;
 static float s_rough = 0.1f;
 static u32 s_numSamplesPerFrame = 64;
 static u32 s_numFramesWithoutChanging = 0; // the number of frames we have been drawing the exact same thing, we use this to compute the blenfing factor inorder to apply temporal antialiasing
+static u32 s_importanceSamplingMode = 0; // 0: NDF, 1: VNDF
 static glm::vec3 s_albedo = {0.8f, 0.8f, 0.8f};
 static float s_metallic = 0.99f;
 static float s_enableFresnelTerm = 1;
@@ -142,6 +143,7 @@ uniform samplerCube u_convolutedEnv;
 uniform sampler2D u_lut;
 uniform uint u_numSamples = 16u;
 uniform uint u_numFramesWithoutChanging;
+uniform uint u_importanceSamplingMode;
 
 uniform float u_fresnelTerm;
 uniform float u_geomTerm;
@@ -240,11 +242,9 @@ void calcLighting()
     }
     // importance sampling
     {
-        //uint validSamples = 0u;
         vec3 specular = vec3(0.0, 0.0, 0.0);
         for(uint iSample = 0u; iSample < u_numSamples; iSample++)
         {
-            //vec2 seed2 = hammersleyVec2(iSample, u_numSamples);
             uint sampleId = iSample + u_numSamples * u_numFramesWithoutChanging;
             uvec3 seedUInt = pcg_uvec3_uvec3(uvec3(gl_FragCoord.x, gl_FragCoord.y, sampleId));
             seedUInt.xy += seedUInt.x;
@@ -255,15 +255,14 @@ void calcLighting()
                 vec3 env = textureLod(u_convolutedEnv, L, 0.0).rgb;
                 float NoL = max(0.0001, dot(N, L));
                 float NoH = max(0.0001, dot(N, H));
-                float G = ggx_G_smith(NoV, NoL, u_rough2);
-                    //G = mix(1.0, G, u_geomTerm);
-                specular += env * F*G* dot(L, H) / (NoL * NoH);
-                //validSamples++;
+                if(u_importanceSamplingMode == 0u) {
+                    float G = ggx_G_smith(NoV, NoL, u_rough2);
+                    specular += env * F*G* dot(L, H) / (NoL * NoH);
+                }
+                else {
+                    specular += env * F * ggx_G(NoL, u_rough2);
+                }
             }
-            /*if((seed2.x >= 0 && seed2.x <= 1 && seed2.y >= 0 && seed2.y <= 1) == false) {
-                o_importance = vec4(11111, 0, 0, 1);
-                return;
-            }*/
         }
         specular /= float(u_numSamples);
         o_importance = vec4(specular, 1);
@@ -283,10 +282,18 @@ static void drawGui()
     {
         bool gottaRefresh = false;
         gottaRefresh |= ImGui::SliderFloat("Roughness", &s_rough, 0, 1.f, "%.5f", 1);
+        
         int numSamples = s_numSamplesPerFrame;
         constexpr int maxSamples = 1024;
         ImGui::SliderInt("Samples per frame", &numSamples, 1, maxSamples);
         s_numSamplesPerFrame = tl::clamp(numSamples, 1, maxSamples);
+
+        bool impSampMode = s_importanceSamplingMode;
+        if(ImGui::Checkbox("Importance Sampling Mode", &impSampMode)) {
+            s_importanceSamplingMode = impSampMode;
+            gottaRefresh = true;
+        }
+
         gottaRefresh |= ImGui::ColorEdit3("Albedo", &s_albedo[0]);
         gottaRefresh |= ImGui::SliderFloat("Metallic", &s_metallic, 0.f, 1.f);
         gottaRefresh |= ImGui::SliderFloat("Enable fresnel term", &s_enableFresnelTerm, 0, 1);
@@ -617,6 +624,7 @@ bool test_iblPbr()
             }
             s_rtUnifLocs.numSamples = glGetUniformLocation(s_rtProg, "u_numSamples");
             s_rtUnifLocs.numFramesWithoutChanging = glGetUniformLocation(s_rtProg, "u_numFramesWithoutChanging");
+            s_rtUnifLocs.importanceSamplingMode = glGetUniformLocation(s_rtProg, "u_importanceSamplingMode");
             s_rtUnifLocs.fresnelTerm = glGetUniformLocation(s_rtProg, "u_fresnelTerm");
             s_rtUnifLocs.geomTerm = glGetUniformLocation(s_rtProg, "u_geomTerm");
             s_rtUnifLocs.ndfTerm = glGetUniformLocation(s_rtProg, "u_ndfTerm");
@@ -700,6 +708,7 @@ bool test_iblPbr()
             uploadCommonUniforms(s_rtUnifLocs);
             glUniform1ui(s_rtUnifLocs.numSamples, s_numSamplesPerFrame);
             glUniform1ui(s_rtUnifLocs.numFramesWithoutChanging, s_numFramesWithoutChanging);
+            glUniform1ui(s_rtUnifLocs.importanceSamplingMode, s_importanceSamplingMode);
             if(s_rtUnifLocs.fresnelTerm != -1)
                 glUniform1f(s_rtUnifLocs.fresnelTerm, s_enableFresnelTerm);
             if(s_rtUnifLocs.geomTerm != -1)
