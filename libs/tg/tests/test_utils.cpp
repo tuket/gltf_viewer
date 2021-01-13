@@ -25,7 +25,7 @@ static const char* geGlErrStr(GLenum const err)
 #ifdef GL_STACK_UNDERFLOW
     case GL_STACK_UNDERFLOW: return "GL_STACK_UNDERFLOW";
 #endif
-#ifdef GL_STACK_OVERFLOW:
+#ifdef GL_STACK_OVERFLOW
     case GL_STACK_OVERFLOW: return "GL_STACK_OVERFLOW";
 #endif
     default:

@@ -3,7 +3,7 @@
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 #include <imgui.h>
-#include <imgui_internal.h>
+#include <imgui_impl_glfw.h>
 #include <cgltf.h>
 #include <stdio.h>
 #include <tl/int_types.hpp>
@@ -124,11 +124,14 @@ namespace mouse_handling
     }
     void onMouseWheel(GLFWwindow* window, double dx, double dy)
     {
-        if(ImGui::GetIO().WantCaptureMouse)
-            return; // the mouse is captured by imgui
-        const float speed = 1.04f;
-        orbitCam.distance *= pow(speed, (float)dy);
-        orbitCam.distance = glm::max(orbitCam.distance, 0.01f);
+        if(ImGui::GetIO().WantCaptureMouse) {
+            ImGui_ImplGlfw_ScrollCallback(window, dx, dy);
+        }
+        else {
+            const float speed = 1.04f;
+            orbitCam.distance *= pow(speed, (float)dy);
+            orbitCam.distance = glm::max(orbitCam.distance, 0.01f);
+        }
     }
 }
 
