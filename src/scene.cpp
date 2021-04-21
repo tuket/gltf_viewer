@@ -16,6 +16,7 @@
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/gtx/euler_angles.hpp>
 #include <glm/gtc/matrix_inverse.hpp>
+#include <glm/gtx/quaternion.hpp>
 #include "utils.hpp"
 #include "shaders.hpp"
 #include <tg/cameras.hpp>
@@ -536,7 +537,17 @@ static void drawSceneNodeRecursive(const cgltf_node& node, const glm::mat4& view
     const glm::mat4& parentMat = glm::mat4(1.0))
 {
     //return; // DISABLED
-    const glm::mat4 modelMat = parentMat * glm::make_mat4(node.matrix);
+
+    glm::mat4 modelMat = parentMat;
+    if(node.has_matrix)
+        modelMat *= glm::make_mat4(node.matrix);
+    if(node.has_translation)
+        modelMat *= glm::translate(glm::mat4(1), {node.translation[0], node.translation[1], node.translation[2]});
+    if(node.has_rotation)
+        modelMat *= glm::toMat4(glm::quat(node.rotation[3], node.rotation[0], node.rotation[1], node.rotation[2]));
+    if(node.has_scale)
+        modelMat *= glm::scale(glm::mat4(1), vec3(node.scale[0], node.scale[1], node.scale[2]));
+
     if(node.mesh)
     {
         const glm::mat3 modelMat3 = modelMat;

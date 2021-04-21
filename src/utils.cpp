@@ -93,7 +93,7 @@ i32 cgltfTypeNumComponents(cgltf_type type)
 GLenum cgltfComponentTypeToGl(cgltf_component_type type)
 {
     assert(type != cgltf_component_type_invalid);
-    static GLenum lu[] = {
+    static const GLenum lu[] = {
         0,
         GL_BYTE,
         GL_UNSIGNED_BYTE,
@@ -107,7 +107,7 @@ GLenum cgltfComponentTypeToGl(cgltf_component_type type)
 
 GLenum cgltfPrimTypeToGl(cgltf_primitive_type type)
 {
-    static GLenum lu[] = {
+    static const GLenum lu[] = {
         GL_POINTS,
         GL_LINES,
         GL_LINE_LOOP,
