@@ -3,6 +3,7 @@
 #include <string.h>
 #include <tl/basic_math.hpp>
 #include <tl/move.hpp>
+#include <tl/span.hpp>
 #include <assert.h>
 #include <new>
 #include <initializer_list>
@@ -29,6 +30,9 @@ public:
 
     template<typename Iterator>
     Vector(Iterator begin, Iterator end);
+
+    operator Span<T>() { return Span<T>(begin(), size()); }
+    operator Span<const T>()const { return Span<const T>(begin(), size()); }
 
     ~Vector();
 

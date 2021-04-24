@@ -16,6 +16,9 @@ public:
     typedef const T* ConstIterator;
     typedef T* Iterator;
 
+    operator Span<T>() { return Span<T>(begin(), size()); }
+    operator Span<const T>()const { return Span<const T>(begin(), size()); }
+
     constexpr size_t size()const{ return N; }
 
     T* data() { return _a; }

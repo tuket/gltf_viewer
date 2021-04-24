@@ -1067,6 +1067,11 @@ static void drawGui_skins()
     }
 }
 
+static void drawGui_animations()
+{
+
+}
+
 static void drawGui_samplers()
 {
     CSpan<cgltf_sampler> samplers (parsedData->samplers, parsedData->samplers_count);
@@ -1204,6 +1209,10 @@ void drawGui()
             drawGui_skins();
             ImGui::EndTabItem();
         }
+        if(ImGui::BeginTabItem("Animations")) {
+            drawGui_animations();
+            ImGui::EndTabItem();
+        }
         if(ImGui::BeginTabItem("Cameras")) {
             drawGui_cameras();
             ImGui::EndTabItem();
@@ -1224,20 +1233,65 @@ void drawGui()
     ImGui::End();
 }
 
-static void loadTextures()
+static void uriToPath(tl::Span<char> path, CStr gltfFilePath, CStr uri)
+{
+    int lastSlash = gltfFilePath.size() - 1;
+    while(lastSlash >= 0 && gltfFilePath[lastSlash] != '/' && gltfFilePath[lastSlash] != '\\' )
+        lastSlash--;
+    const int dirLen = lastSlash + 1;
+    assert(dirLen + uri.size() + 1 < path.size());
+    memcpy(path.begin(), gltfFilePath.c_str(), dirLen);
+    memcpy(path.begin() + dirLen, uri.c_str(), uri.size());
+    path[dirLen + uri.size()] = '\0';
+}
+
+struct LoadedImage { u8* data; int w, h; };
+static tl::Vector<LoadedImage> loadImages(CStr gltfFilePath)
+{
+    Span<cgltf_image> images(parsedData->images, parsedData->images_count);
+    tl::Vector<LoadedImage> loadedImages(images.size());
+    for(int i = 0; i < images.size(); i++)
+    {
+        cgltf_image& img = images[i];
+        u8* (&imgData) = loadedImages[i].data;
+        int& w = loadedImages[i].w;
+        int& h = loadedImages[i].h;
+        int nc;
+        if(img.uri) {
+            uriToPath(scratchStr(), gltfFilePath, img.uri);
+            imgData = stbi_load(scratchStr(), &w, &h, &nc, 4);
+        }
+        else {
+            const auto* bufferView = img.buffer_view;
+            const auto* data = (u8*)bufferView->buffer->data + bufferView->offset;
+            const size_t size = bufferView->size;
+            imgData = stbi_load_from_memory(data, size, &w, &h, &nc, 4);
+        }
+    }
+    return loadedImages;
+}
+
+static void freeImages(Span<LoadedImage> loadedImages)
+{
+    for(const LoadedImage& img : loadedImages)
+        stbi_image_free(img.data);
+}
+
+static void loadTextures(Span<LoadedImage> loadedImages)
 {
     CSpan<cgltf_texture> textures(parsedData->textures, parsedData->textures_count);
     gpu::textures.resize(textures.size());
     glGenTextures(textures.size(), gpu::textures.begin());
     for(size_t i = 0; i < textures.size(); i++)
     {
-        const auto* bufferView = textures[i].image->buffer_view;
-        const auto* data = (u8*)bufferView->buffer->data + bufferView->offset;
-        const size_t size = bufferView->size;
-        int w, h, c;
-        u8* img = stbi_load_from_memory(data, size, &w, &h, &c, 4);
+        cgltf_image* img = textures[i].image;
+        assert(img);
+        const int imgInd = getImageInd(img);
+        const u8* imgData = loadedImages[imgInd].data;
+        const int w = loadedImages[imgInd].w;
+        const int h = loadedImages[imgInd].h;
         glBindTexture(GL_TEXTURE_2D, gpu::textures[i]);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, img);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, imgData);
         gpu::textureSizes[i] = {w, h};
         imgui_state::textureHeights[i] = DEFAULT_IMGUI_IMG_HEIGHT;
         const auto* sampler = textures[i].sampler;
@@ -1259,7 +1313,6 @@ static void loadTextures()
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
             glGenerateMipmap(GL_TEXTURE_2D);
         }
-        
     }
 }
 
@@ -1521,7 +1574,9 @@ bool loadGltf(const char* path)
         if(imgui_state::selectedSceneInd && parsedData->scenes_count)
             imgui_state::selectedSceneInd = 0;
 
-        loadTextures();
+        auto loadedImages = loadImages(path);
+        loadTextures(loadedImages);
+        freeImages(loadedImages);
         loadBufferObjects();
         createVaos();
         loadMaterials();
