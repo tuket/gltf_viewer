@@ -122,7 +122,7 @@ GLenum cgltfPrimTypeToGl(cgltf_primitive_type type)
 
 const char* cgltfPrimitiveTypeStr(cgltf_primitive_type type)
 {
-    static const char* strs[] = {
+    static ConstStr strs[] = {
         "POINTS",
         "LINES",
         "LINE_LOOP",
@@ -138,7 +138,7 @@ const char* cgltfPrimitiveTypeStr(cgltf_primitive_type type)
 
 const char* cgltfTypeStr(cgltf_type type)
 {
-    static const char* strs[] = {"invalid", "scalar", "vec2", "vec3", "vec4", "mat2", "mat3", "mat4"};
+    static ConstStr strs[] = {"invalid", "scalar", "vec2", "vec3", "vec4", "mat2", "mat3", "mat4"};
     const u32 i = type;
     assert(i < tl::size(strs));
     return strs[i];
@@ -146,7 +146,7 @@ const char* cgltfTypeStr(cgltf_type type)
 
 const char* cgltfComponentTypeStr(cgltf_component_type type)
 {
-    static const char* strs[] = {"invalid", "i8", "u8", "i16", "u16", "u32", "f32"};
+    static ConstStr strs[] = {"invalid", "i8", "u8", "i16", "u16", "u32", "f32"};
     const u32 i = type;
     assert(i < tl::size(strs));
     return strs[i];
@@ -154,7 +154,7 @@ const char* cgltfComponentTypeStr(cgltf_component_type type)
 
 const char* cgltfAttribTypeStr(cgltf_attribute_type type)
 {
-    static const char* strs[] = {"invalid", "position", "normal", "tangent", "texcoord", "color", "joints", "weights"};
+    static ConstStr strs[] = {"invalid", "position", "normal", "tangent", "texcoord", "color", "joints", "weights"};
     const u32 i = type;
     assert(i < tl::size(strs));
     return strs[i];
@@ -162,7 +162,7 @@ const char* cgltfAttribTypeStr(cgltf_attribute_type type)
 
 const char* cgltfCameraTypeStr(cgltf_camera_type type)
 {
-    static const char* strs[] = {"invalid", "perspective", "orthographic"};
+    static ConstStr strs[] = {"invalid", "perspective", "orthographic"};
     const u32 i = type;
     assert(i < tl::size(strs));
     return strs[i];
@@ -197,6 +197,22 @@ const char* cgltfValueStr(cgltf_type type, const cgltf_float (&m)[16])
         sprintf(scratch.str(), "invalid");
     }
     return scratch.str();
+}
+
+const char* cgltfAnimationPathStr(cgltf_animation_path_type type)
+{
+    static ConstStr const strs[] = {"invalid", "translation", "rotation", "scale", "weights"};
+    const u32 i = type;
+    assert(i < tl::size(strs));
+    return strs[i];
+}
+
+const char* cgltfInterpolationStr(cgltf_interpolation_type type)
+{
+    static ConstStr const strs[] = {"linear", "step", "cubic_spline"};
+    const u32 i = type;
+    assert(i < tl::size(strs));
+    return strs[i];
 }
 
 const char* glMinFilterModeStr(int minFilterMode)
@@ -234,6 +250,11 @@ const char* glTextureWrapModeStr(int wrapMode)
     }
     assert(false);
     return "";
+}
+
+void imguiPlotAnimSampler(tl::CSpan<float> times, tl::CSpan<glm::vec3> data, float scale, float scroll, float cursor)
+{
+    // TODO
 }
 
 /*

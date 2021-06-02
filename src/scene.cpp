@@ -479,6 +479,11 @@ static void imguiPrimitive(const cgltf_primitive& prim)
     }
 }
 
+static void imguiAnimationChannel(const cgltf_animation_channel& channel)
+{
+
+}
+
 static void imguiColor(const float (&color) [3])
 {
     ImGui::TextColored(ImColor(color[0], color[1], color[2]), "(%g, %g, %g)", color[0], color[1], color[2]);
@@ -587,7 +592,7 @@ static void drawSceneNodeRecursive(const cgltf_node& node, const glm::mat4& view
                        cgltfPrimTypeToGl(prim.type),
                        prim.indices->count,
                        cgltfComponentTypeToGl(prim.indices->component_type),
-                       (void*)prim.indices->buffer_view->offset
+                       (void*)(prim.indices->buffer_view->offset + prim.indices->offset)
                     );
                 }
                 else {
@@ -1069,7 +1074,54 @@ static void drawGui_skins()
 
 static void drawGui_animations()
 {
+    CSpan<cgltf_animation> animations(parsedData->animations, parsedData->animations_count);
+    for(size_t i = 0; i < animations.size(); i++)
+    {
+        const cgltf_animation& anim = animations[i];
+        tl::toStringBuffer(scratchStr(), i, ") ", anim.name ? anim.name : "(null)");
+        if(ImGui::CollapsingHeader(scratchStr()))
+        {
+            ImGui::TreePush();
+            if(ImGui::TreeNode((void*)&anim.channels, "channels"))
+            {
+                for(size_t channelInd = 0; channelInd < anim.channels_count; channelInd++)
+                {
+                    const cgltf_animation_channel& channel = anim.channels[channelInd];
+                    tl::toStringBuffer(scratchStr(), channelInd);
+                    if(ImGui::TreeNode(scratchStr()))
+                    {
+                        const int samplerInd = int(channel.sampler - anim.samplers);
+                        ImGui::Text("target node: %d) %s", int(getNodeInd(channel.target_node)), channel.target_node->name);
+                        ImGui::Text("target path: %s", cgltfAnimationPathStr(channel.target_path));
+                        ImGui::Text("sampler: %d", samplerInd);
+                        ImGui::TreePop();
+                    }
+                }
 
+                ImGui::TreePop();
+            }
+            if(ImGui::TreeNode((void*)&anim.samplers, "samplers"))
+            {
+                for(size_t samplerInd = 0; samplerInd < anim.samplers_count; samplerInd++)
+                {
+                    const cgltf_animation_sampler& sampler = anim.samplers[samplerInd];
+                    tl::toStringBuffer(scratchStr(), samplerInd);
+                    if(ImGui::TreeNode(scratchStr()))
+                    {
+                        ImGui::Text("interpolation type: %s", cgltfInterpolationStr(sampler.interpolation));
+
+                    /*    cgltf_accessor* input;
+                        cgltf_accessor* output;
+                        cgltf_interpolation_type interpolation;*/
+                        ImGui::TreePop();
+                    }
+                }
+
+                ImGui::TreePop();
+            }
+            ImGui::TreePop();
+        }
+    }
 }
 
 static void drawGui_samplers()

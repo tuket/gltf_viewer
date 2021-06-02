@@ -8,6 +8,7 @@
 #include <tl/span.hpp>
 
 constexpr float PI = glm::pi<float>();
+typedef const char* const ConstStr;
 
 class ScratchBuffer {
 public:
@@ -83,10 +84,14 @@ const char* cgltfComponentTypeStr(cgltf_component_type type);
 const char* cgltfAttribTypeStr(cgltf_attribute_type type);
 const char* cgltfCameraTypeStr(cgltf_camera_type type);
 const char* cgltfValueStr(cgltf_type type, const cgltf_float (&m)[16]);
+const char* cgltfAnimationPathStr(cgltf_animation_path_type type);
+const char* cgltfInterpolationStr(cgltf_interpolation_type type);
 
 const char* glMinFilterModeStr(int minFilterMode);
 const char* glMagFilterModeStr(int magFitlerMode);
 const char* glTextureWrapModeStr(int wrapMode);
+
+void imguiPlotAnimSampler(tl::CSpan<float> times, tl::CSpan<glm::vec3> data, float scale, float scroll, float cursor);
 
 /*
 struct ImFont;
