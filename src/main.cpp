@@ -8,6 +8,7 @@
 #include <imgui.h>
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_opengl3.h>
+#include <implot.h>
 #include "utils.hpp"
 #include "shaders.hpp"
 
@@ -50,6 +51,7 @@ int main(int argc, char* argv[])
     glad_set_post_callback(glErrorCallback);
 
     ImGui::CreateContext();
+    ImPlot::CreateContext();
     ImGuiIO& io = ImGui::GetIO(); (void)io;
     //io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
     ImGui::StyleColorsDark();
@@ -125,6 +127,7 @@ int main(int argc, char* argv[])
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
+        ImGui::ShowDemoWindow();
         drawGui();
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
         ImGui::Render();

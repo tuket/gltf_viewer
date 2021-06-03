@@ -4,6 +4,7 @@
 #include <GLFW/glfw3.h>
 #include <imgui.h>
 #include <imgui_impl_glfw.h>
+#include <implot.h>
 #include <cgltf.h>
 #include <stdio.h>
 #include <tl/int_types.hpp>
@@ -808,6 +809,7 @@ static void drawGui_scenesTab()
     ImGui::SameLine();
     ImGui::BeginChild("right_panel", {rightPanelSize, -1}, true);
     if(selectedNode) {
+        ImGui::Text("Node index: %ld", getNodeInd(selectedNode));
         if(selectedNode->skin) {
             ImGui::Text("Skin: %ld", getSkinInd(selectedNode->skin));
         }
@@ -852,7 +854,6 @@ static void drawGui_scenesTab()
                         m[8], m[9], m[10], m[11],
                         m[12], m[13], m[14], m[15]);
         }
-        ImGui::Text("be");
     }
     else {
         ImGui::Text("Nothing selected");
@@ -1072,6 +1073,29 @@ static void drawGui_skins()
     }
 }
 
+struct AnimDataPlottingInfo {
+    const cgltf_animation_sampler* sampler;
+    int channel;
+};
+
+static const void* cgltfAccessAcessor(const cgltf_accessor& a, cgltf_size i)
+{
+    assert(i < a.count);
+    const char* bufferPtr = (char*)(a.buffer_view->buffer->data) + a.buffer_view->offset;
+    const char* bufferViewPtr = bufferPtr + a.offset + i * a.stride;
+    return (void*)bufferViewPtr;
+}
+
+static ImPlotPoint sampleAnimDataForPlotting(void* data, int i)
+{
+    auto& info = *(const AnimDataPlottingInfo*)data;
+    auto& sampler = *info.sampler;
+    assert(sampler.input->type == cgltf_type_scalar);
+    const float* timeData = (const float*)cgltfAccessAcessor(*sampler.input, i);
+    const float* valData = (const float*)cgltfAccessAcessor(*sampler.output, i);
+    return {timeData[0], valData[info.channel]};
+}
+
 static void drawGui_animations()
 {
     CSpan<cgltf_animation> animations(parsedData->animations, parsedData->animations_count);
@@ -1109,6 +1133,19 @@ static void drawGui_animations()
                     if(ImGui::TreeNode(scratchStr()))
                     {
                         ImGui::Text("interpolation type: %s", cgltfInterpolationStr(sampler.interpolation));
+                        ImGui::Text("Input compType: %s", cgltfComponentTypeStr(sampler.input->component_type));
+                        ImPlot::BeginPlot("", "t");
+                        AnimDataPlottingInfo info {&sampler};
+                        const i32 numComponents = cgltfTypeNumComponents(sampler.output->type);
+                        ConstStr axesStrs[] = {"x", "y", "z", "w"};
+                        if(numComponents <= 4) {
+                            for(i32 i = 0; i < numComponents; i++) {
+                                info.channel = i;
+                                ImPlot::PlotLineG(axesStrs[i], sampleAnimDataForPlotting, &info, sampler.input->count, 0);
+                                ImPlot::PlotScatterG(axesStrs[i], sampleAnimDataForPlotting, &info, sampler.input->count, 0);
+                            }
+                            ImPlot::EndPlot();
+                        }
 
                     /*    cgltf_accessor* input;
                         cgltf_accessor* output;
