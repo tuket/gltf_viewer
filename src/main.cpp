@@ -58,6 +58,14 @@ int main(int argc, char* argv[])
     ImGui_ImplGlfw_InitForOpenGL(window, true);
     ImGui_ImplOpenGL3_Init();
     io.Fonts->AddFontDefault();
+
+    { // icons font
+        ImFontConfig config;
+        config.MergeMode = true;
+        //config.GlyphMinAdvanceX = 13; // use if you want to make the icon monospaced
+        static const ImWchar iconRanges[] = { 0xe000, 0xF8FF, 0 };
+        io.Fonts->AddFontFromFileTTF("data/OpenFontIcons.ttf", 13.f, &config, iconRanges);
+    }
     const int fontSize = 18;
     /*{
         ImFontConfig font_cfg = ImFontConfig();

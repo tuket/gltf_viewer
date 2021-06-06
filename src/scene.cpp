@@ -46,6 +46,12 @@ constexpr u32 FLOOR_GRID_RESOLUTION = 50;
 constexpr u32 FLOOR_GRID_SUBDIVS = 8; 
 static const glm::vec4 BG_COLOR = {0.1f, 0.2f, 0.1f, 1.0f};
 
+namespace icons { // https://github.com/traverseda/OpenFontIcons
+static ConstStr PLAY = u8"\ue0a9";
+static ConstStr STOP = u8"\ue0cb";
+static ConstStr PAUSE = u8"\ue09e";
+}
+
 // scene gpu resources
 namespace gpu
 {
@@ -76,6 +82,25 @@ static bool showAxes = true;
 static bool showFloorGrid = true;
 static float crosshairScale = 0.01f;
 static bool showCrosshair = true;
+}
+
+namespace anims
+{
+    static i32 playingInd = 0;
+        // 0 means that there is no animation playing
+        // positive means that the animation (playingInd-1) is playing
+        // negative means that the animation (playingInd-1) is paused
+    static float time = 0.f;
+    static float duration = 0.f;
+
+    struct NodeData {
+        vec3* position;
+        glm::quat* rotation;
+        vec3* scale;
+    };
+    static tl::Vector<NodeData> nodesData;
+    static tl::Vector<float> animData;
+    static tl::Vector<i32> curKeyInds; // the current key index foreach sampler
 }
 
 namespace mouse_handling
@@ -322,6 +347,9 @@ static size_t getCameraInd(const cgltf_camera* camera) {
 static size_t getLightInd(const cgltf_light* light) {
     return (size_t)(light - parsedData->lights);
 }
+static size_t getAnimSamplerInd(const cgltf_animation& anim, const cgltf_animation_sampler* sampler) {
+    return (size_t)(sampler - anim.samplers);
+}
 
 static const char* getCameraName(int ind) {
     if(ind < 0)
@@ -330,6 +358,146 @@ static const char* getCameraName(int ind) {
     const char* name = parsedData->cameras[ind].name;
     tl::toStringBuffer(scratchStr(), "%d) %s", (name ? name : "(null)"));
     return scratchStr();
+}
+
+static void advanceAnimPathOffset(size_t& offset, cgltf_animation_path_type t)
+{
+    switch(t) {
+        case cgltf_animation_path_type_translation:
+        case cgltf_animation_path_type_scale:
+            offset += 3;
+            break;
+        case cgltf_animation_path_type_rotation:
+            offset += 4;
+            break;
+        default:
+            assert(false);
+    }
+}
+
+namespace anims
+{
+static void initAnim()
+{
+    nodesData.resize(parsedData->nodes_count);
+    memset(nodesData.data(), 0, sizeof(NodeData) * parsedData->nodes_count);
+    tl::CSpan<cgltf_animation> anims(parsedData->animations, parsedData->animations_count);
+    size_t requiredMem = 0;
+    if(playingInd > 0) {
+        const cgltf_animation& anim = anims[playingInd-1];
+        tl::CSpan<cgltf_animation_channel> channels(anim.channels, anim.channels_count);
+        for(const cgltf_animation_channel& channel : channels)
+            advanceAnimPathOffset(requiredMem, channel.target_path);
+    }
+    animData.resize(requiredMem);
+
+    size_t offset = 0;
+    if(playingInd > 0) {
+        const cgltf_animation& anim = parsedData->animations[playingInd-1];
+        curKeyInds.resize(anim.samplers_count);
+        
+        tl::CSpan<cgltf_animation_channel> channels(anim.channels, anim.channels_count);
+        for(const cgltf_animation_channel& channel : channels) {
+            const size_t nodeInd = getNodeInd(channel.target_node);
+            switch(channel.target_path) {
+                case cgltf_animation_path_type_translation:
+                    nodesData[nodeInd].position = (vec3*)&animData[offset];
+                    break;
+                case cgltf_animation_path_type_rotation:
+                    nodesData[nodeInd].rotation = (glm::quat*)&animData[offset];
+                    break;
+                case cgltf_animation_path_type_scale:
+                    nodesData[nodeInd].scale = (vec3*)&animData[offset];
+                    break;
+                default:
+                    assert(false);
+            }
+            advanceAnimPathOffset(requiredMem, channel.target_path);
+        }
+
+        time = 0;
+        tl::CSpan<cgltf_animation_sampler> samplers(anim.samplers, anim.samplers_count);
+        for(const cgltf_animation_sampler& sampler : samplers) {
+            assert(sampler.input->has_max);
+            time = tl::max(time, sampler.input->max);
+        }
+    }
+}
+
+static void update(float dt)
+{
+    if(playingInd <= 0)
+        return;
+    const cgltf_animation& anim = parsedData->animations[playingInd-1];
+    const int numSamplers = curKeyInds.size();
+
+    time += dt;
+    fmodf(time, duration); // looping by default for now
+    assert(time >= 0 && time < duration);
+    for(int i = 0; i < numSamplers; i++) {
+        auto& sampler = anim.samplers[i];
+        auto& ki = curKeyInds[i];
+        const int numKeys = sampler.input->count;
+        float timeA = *(float*)cgltfAccessAcessor(*sampler.input, ki);
+        float timeB = *(float*)cgltfAccessAcessor(*sampler.input, ki + 1);
+        []() {
+            auto nextFrame = [&]() {
+                ki++;
+                timeA = timeB;
+                timeB = *(float*)cgltfAccessAcessor(*sampler.input, ki + 1);
+            };
+            while(ki < numKeys-1) {
+                if(timeA <= time && time < timeB)
+                    return;
+                nextFrame();
+            }
+            ki = 0;
+            timeA = *(float*)cgltfAccessAcessor(*sampler.input, ki);
+            timeB = *(float*)cgltfAccessAcessor(*sampler.input, ki + 1);
+            while(ki < numKeys-1) {
+                if(timeA <= time && time < timeB)
+                    return;
+                nextFrame();
+            }
+            assert(false);
+        }();
+    }
+
+        /*switch(sampler->interpolation)
+        {
+        case cgltf_interpolation_type_linear:
+
+	    case cgltf_interpolation_type_step:
+            
+	    case cgltf_interpolation_type_cubic_spline:
+            assert(false && "not implemented");
+        }*/
+
+    tl::CSpan<cgltf_animation_channel> channels(anim.channels, anim.channels_count);
+    for(const cgltf_animation_channel& channel : channels) {
+        const size_t nodeInd = getNodeInd(channel.target_node);
+        switch(channel.target_path) {
+            case cgltf_animation_path_type_translation:
+                auto& pos = nodesData[nodeInd].position;
+                assert(&pos);
+                const size_t samplerInd = getAnimSamplerInd(anim, channel.sampler);
+                // TODO: store the interpolated position in pos, I might wanmt to make a funtion "interpolate" that takes the interpolation mode as a param
+                break;
+            case cgltf_animation_path_type_rotation:
+                auto& rot = *nodesData[nodeInd].rotation;
+                assert(&rot);
+                
+                break;
+            case cgltf_animation_path_type_scale:
+                auto& scale = *nodesData[nodeInd].scale;
+                assert(*scale);
+                break;
+            default:
+                assert(false);
+        }
+        advanceAnimPathOffset(requiredMem, channel.target_path);
+    }
+}
 }
 
 static void imguiTexture(size_t textureInd, float* height)
@@ -1106,6 +1274,25 @@ static void drawGui_animations()
         if(ImGui::CollapsingHeader(scratchStr()))
         {
             ImGui::TreePush();
+            //ImGui::Button();
+            if(anims::playingInd-1 == i) {
+                if(ImGui::Button(icons::PAUSE)) {
+                    anims::playingInd = -anims::playingInd;
+                }
+            }
+            else {
+                if(ImGui::Button(icons::PLAY)) {
+                    if(anims::playingInd >= 0 || -anims::playingInd-1 != i) // if we are playing the same animation that was paused, resume from the last point
+                        anims::progress = 0;
+                    anims::playingInd = i+1;
+                }
+            }
+            ImGui::SameLine();
+            if(ImGui::Button(icons::STOP)) {
+                anims::playingInd = 0;
+                anims::progress = 0;
+            }
+
             if(ImGui::TreeNode((void*)&anim.channels, "channels"))
             {
                 for(size_t channelInd = 0; channelInd < anim.channels_count; channelInd++)
