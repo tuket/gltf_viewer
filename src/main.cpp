@@ -119,9 +119,16 @@ int main(int argc, char* argv[])
         loadGltf(argv[1]);
     }
 
+    double t = glfwGetTime();
     while (!glfwWindowShouldClose(window))
     {
+        const double prevT = t;
+        t = glfwGetTime();
+        const double dt = t - prevT;
+
         glfwPollEvents();
+
+        update(dt);
 
         // draw scene
         glBindFramebuffer(GL_FRAMEBUFFER, 0);

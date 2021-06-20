@@ -100,7 +100,7 @@ namespace anims
     };
     static tl::Vector<NodeData> nodesData;
     static tl::Vector<float> animData;
-    static tl::Vector<i32> curKeyInds; // the current key index foreach sampler
+    static tl::Vector<i32> curKeyInds; // the current key index foreach sampler, -1 means that we haven't reached the first frame yet
 }
 
 namespace mouse_handling
@@ -395,6 +395,8 @@ static void initAnim()
     if(playingInd > 0) {
         const cgltf_animation& anim = parsedData->animations[playingInd-1];
         curKeyInds.resize(anim.samplers_count);
+        for(i32& ind : curKeyInds)
+            ind = -1;
         
         tl::CSpan<cgltf_animation_channel> channels(anim.channels, anim.channels_count);
         for(const cgltf_animation_channel& channel : channels) {
@@ -412,16 +414,64 @@ static void initAnim()
                 default:
                     assert(false);
             }
-            advanceAnimPathOffset(requiredMem, channel.target_path);
+            advanceAnimPathOffset(offset, channel.target_path);
         }
 
-        time = 0;
+        duration = 0;
         tl::CSpan<cgltf_animation_sampler> samplers(anim.samplers, anim.samplers_count);
         for(const cgltf_animation_sampler& sampler : samplers) {
             assert(sampler.input->has_max);
-            time = tl::max(time, sampler.input->max);
+            duration = tl::max(duration, sampler.input->max[0]);
         }
     }
+}
+
+template <typename T> static T interpolateAnimValue(const void* X, const void* Y, float a);
+template <> vec3 interpolateAnimValue(const void* X, const void* Y, float a) {
+    return glm::mix(*(const glm::vec3*)X, *(const glm::vec3*)Y, a);
+}
+template <> glm::quat interpolateAnimValue(const void* X, const void* Y, float a) {
+    const vec4& vx = *(const vec4*)X;
+    const vec4& vy = *(const vec4*)Y;
+    const glm::quat qx = {vx[3], vx[0], vx[1], vx[2]};
+    const glm::quat qy = {vy[3], vy[0], vy[1], vy[2]};
+    return glm::slerp(qx, qy, a);
+}
+
+template <typename T>
+static T interpolateAnim(cgltf_interpolation_type t, const cgltf_animation_sampler& sampler, i32 curKeyInd, i32 numKeys)
+{
+    auto accessInput = [&](int i) {
+        return cgltfAccessAccessor(*sampler.input, i);
+    };
+    auto accessOutput = [&](int i) {
+        return cgltfAccessAccessor(*sampler.output, i);
+    };
+    switch(t) {
+        case cgltf_interpolation_type_step: {
+            const i32 i = glm::clamp(curKeyInd, 0, numKeys);
+            return *(T*)accessOutput(i);
+            break;
+        }
+        case cgltf_interpolation_type_linear: {
+            if(curKeyInd == -1)
+                return *(T*)accessOutput(0);
+            else if(curKeyInd == numKeys-1)
+                return *(T*)accessOutput(numKeys-1);
+            const void* p0 = accessOutput(curKeyInd);
+            const void* p1 = accessOutput(curKeyInd + 1);
+            const float timeA = *(float*)accessInput(curKeyInd);
+            const float timeB = *(float*)accessInput(curKeyInd + 1);
+            const float a = (time - timeA) / (timeB - timeA);
+            return interpolateAnimValue<T>(p0, p1, a);
+            break;
+        }
+        case cgltf_interpolation_type_cubic_spline:
+        default: {
+            assert(false && "not implemented");
+        }
+    }
+    return {};
 }
 
 static void update(float dt)
@@ -432,70 +482,79 @@ static void update(float dt)
     const int numSamplers = curKeyInds.size();
 
     time += dt;
-    fmodf(time, duration); // looping by default for now
+    time = fmodf(time, duration); // looping by default for now
     assert(time >= 0 && time < duration);
     for(int i = 0; i < numSamplers; i++) {
         auto& sampler = anim.samplers[i];
         auto& ki = curKeyInds[i];
         const int numKeys = sampler.input->count;
-        float timeA = *(float*)cgltfAccessAcessor(*sampler.input, ki);
-        float timeB = *(float*)cgltfAccessAcessor(*sampler.input, ki + 1);
-        []() {
-            auto nextFrame = [&]() {
-                ki++;
-                timeA = timeB;
-                timeB = *(float*)cgltfAccessAcessor(*sampler.input, ki + 1);
-            };
-            while(ki < numKeys-1) {
-                if(timeA <= time && time < timeB)
-                    return;
-                nextFrame();
-            }
-            ki = 0;
-            timeA = *(float*)cgltfAccessAcessor(*sampler.input, ki);
-            timeB = *(float*)cgltfAccessAcessor(*sampler.input, ki + 1);
-            while(ki < numKeys-1) {
-                if(timeA <= time && time < timeB)
-                    return;
-                nextFrame();
-            }
-            assert(false);
-        }();
-    }
-
-        /*switch(sampler->interpolation)
+        auto advanceKeyIfNeeded = [&]() -> bool
         {
-        case cgltf_interpolation_type_linear:
+            if(ki == -1) { // corner case at the beginning
+                const float timeB = *(float*)cgltfAccessAccessor(*sampler.input, ki + 1);
+                if(time < timeB)
+                    return false;
+                else {
+                    ki++;
+                    return true;
+                }
+            }
+            else if(ki == numKeys-1) { // corner case at the end
+                const float timeA = *(float*)cgltfAccessAccessor(*sampler.input, ki);
+                if(time >= timeA)
+                    return false;
+                else {
+                    ki = -1;
+                    return true;
+                }
+            }
 
-	    case cgltf_interpolation_type_step:
-            
-	    case cgltf_interpolation_type_cubic_spline:
-            assert(false && "not implemented");
-        }*/
+            const float timeA = *(float*)cgltfAccessAccessor(*sampler.input, ki);
+            const float timeB = *(float*)cgltfAccessAccessor(*sampler.input, ki + 1);
+
+            if(time < timeA)
+                ki = -1;
+            else if(time < timeB)
+                return false;
+            else
+                ki++;
+
+            return true;
+        };
+        
+        while(advanceKeyIfNeeded());
+    }
 
     tl::CSpan<cgltf_animation_channel> channels(anim.channels, anim.channels_count);
     for(const cgltf_animation_channel& channel : channels) {
         const size_t nodeInd = getNodeInd(channel.target_node);
+        const cgltf_animation_sampler* sampler = channel.sampler;
+        const size_t samplerInd = getAnimSamplerInd(anim, sampler);
+        const i32 curKeyInd = curKeyInds[samplerInd];
+        const i32 numKeys = sampler->input->count;
+
         switch(channel.target_path) {
-            case cgltf_animation_path_type_translation:
-                auto& pos = nodesData[nodeInd].position;
+            case cgltf_animation_path_type_translation: {
+                auto& pos = *nodesData[nodeInd].position;
                 assert(&pos);
-                const size_t samplerInd = getAnimSamplerInd(anim, channel.sampler);
-                // TODO: store the interpolated position in pos, I might wanmt to make a funtion "interpolate" that takes the interpolation mode as a param
+                pos = interpolateAnim<vec3>(sampler->interpolation, *sampler, curKeyInd, numKeys);
                 break;
-            case cgltf_animation_path_type_rotation:
+            }
+            case cgltf_animation_path_type_rotation: {
                 auto& rot = *nodesData[nodeInd].rotation;
                 assert(&rot);
-                
+                rot = interpolateAnim<glm::quat>(sampler->interpolation, *sampler, curKeyInd, numKeys);
                 break;
-            case cgltf_animation_path_type_scale:
+            }
+            case cgltf_animation_path_type_scale: {
                 auto& scale = *nodesData[nodeInd].scale;
-                assert(*scale);
+                assert(&scale);
+                scale = interpolateAnim<vec3>(sampler->interpolation, *sampler, curKeyInd, numKeys);
                 break;
+            }
             default:
                 assert(false);
         }
-        advanceAnimPathOffset(requiredMem, channel.target_path);
     }
 }
 }
@@ -564,7 +623,7 @@ static void imguiAccessor(const cgltf_accessor& accessor)
     if(accessor.has_min)
         ImGui::Text("Min: %s", cgltfValueStr(accessor.type, accessor.min));
     if(accessor.has_max)
-        ImGui::Text("Min: %s", cgltfValueStr(accessor.type, accessor.max));
+        ImGui::Text("Max: %s", cgltfValueStr(accessor.type, accessor.max));
 
     ImGui::Text("Offset: %ld", accessor.offset);
     ImGui::Text("Count: %ld", accessor.count);
@@ -710,16 +769,25 @@ static const cgltf_material s_defaultMaterial =
 static void drawSceneNodeRecursive(const cgltf_node& node, const glm::mat4& viewProj,
     const glm::mat4& parentMat = glm::mat4(1.0))
 {
-    //return; // DISABLED
-
+    const i32 nodeInd = getNodeInd(&node);
+    const auto animData = anims::playingInd ? &anims::nodesData[nodeInd] : nullptr;
     glm::mat4 modelMat = parentMat;
     if(node.has_matrix)
         modelMat *= glm::make_mat4(node.matrix);
-    if(node.has_translation)
+
+    if(animData && animData->position)
+        modelMat *= glm::translate(glm::mat4(1), *animData->position);
+    else if(node.has_translation)
         modelMat *= glm::translate(glm::mat4(1), {node.translation[0], node.translation[1], node.translation[2]});
-    if(node.has_rotation)
+
+    if(animData && animData->rotation)
+        modelMat *= glm::toMat4(*animData->rotation);
+    else if(node.has_rotation)
         modelMat *= glm::toMat4(glm::quat(node.rotation[3], node.rotation[0], node.rotation[1], node.rotation[2]));
-    if(node.has_scale)
+
+    if(animData && animData->scale)
+        modelMat *= glm::scale(glm::mat4(1), *animData->scale);
+    else if(node.has_scale)
         modelMat *= glm::scale(glm::mat4(1), vec3(node.scale[0], node.scale[1], node.scale[2]));
 
     if(node.mesh)
@@ -874,6 +942,11 @@ static void drawOrbitCenterCrosshair(const glm::mat4& viewProj)
     glUniformMatrix4fv(shadInfo.locs.modelViewProj, 1, GL_FALSE, &modelViewProj[0][0]);
     glBindVertexArray(gpu::crosshairVao);
     glDrawArrays(GL_LINES, 0, 6);
+}
+
+void update(float dt)
+{
+    anims::update(dt);
 }
 
 void drawScene()
@@ -1246,21 +1319,13 @@ struct AnimDataPlottingInfo {
     int channel;
 };
 
-static const void* cgltfAccessAcessor(const cgltf_accessor& a, cgltf_size i)
-{
-    assert(i < a.count);
-    const char* bufferPtr = (char*)(a.buffer_view->buffer->data) + a.buffer_view->offset;
-    const char* bufferViewPtr = bufferPtr + a.offset + i * a.stride;
-    return (void*)bufferViewPtr;
-}
-
 static ImPlotPoint sampleAnimDataForPlotting(void* data, int i)
 {
     auto& info = *(const AnimDataPlottingInfo*)data;
     auto& sampler = *info.sampler;
     assert(sampler.input->type == cgltf_type_scalar);
-    const float* timeData = (const float*)cgltfAccessAcessor(*sampler.input, i);
-    const float* valData = (const float*)cgltfAccessAcessor(*sampler.output, i);
+    const float* timeData = (const float*)cgltfAccessAccessor(*sampler.input, i);
+    const float* valData = (const float*)cgltfAccessAccessor(*sampler.output, i);
     return {timeData[0], valData[info.channel]};
 }
 
@@ -1283,15 +1348,17 @@ static void drawGui_animations()
             else {
                 if(ImGui::Button(icons::PLAY)) {
                     if(anims::playingInd >= 0 || -anims::playingInd-1 != i) // if we are playing the same animation that was paused, resume from the last point
-                        anims::progress = 0;
+                        anims::time = 0;
                     anims::playingInd = i+1;
+                    anims::initAnim();
                 }
             }
             ImGui::SameLine();
             if(ImGui::Button(icons::STOP)) {
                 anims::playingInd = 0;
-                anims::progress = 0;
+                anims::time = 0;
             }
+            ImGui::Text("time: %g / %g", anims::time, anims::duration);
 
             if(ImGui::TreeNode((void*)&anim.channels, "channels"))
             {
@@ -1333,10 +1400,6 @@ static void drawGui_animations()
                             }
                             ImPlot::EndPlot();
                         }
-
-                    /*    cgltf_accessor* input;
-                        cgltf_accessor* output;
-                        cgltf_interpolation_type interpolation;*/
                         ImGui::TreePop();
                     }
                 }

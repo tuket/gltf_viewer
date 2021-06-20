@@ -16,6 +16,7 @@ void createFloorGridMesh();
 void createCrosshairMesh();
 void createBasicTextures();
 
+void update(float dt);
 void drawScene();
 void drawGui();
 
