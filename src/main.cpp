@@ -3,7 +3,6 @@
 #include <GLFW/glfw3.h>
 #include <tl/fmt.hpp>
 #include <glm/vec2.hpp>
-#include <GL/glu.h>
 #include "scene.hpp"
 #include <imgui.h>
 #include <imgui_impl_glfw.h>
@@ -14,12 +13,32 @@
 
 GLFWwindow* window;
 
+static const char* getGlErrStr(GLenum const err)
+{
+    switch (err) {
+    case GL_NO_ERROR: return "GL_NO_ERROR";
+    case GL_INVALID_ENUM: return "GL_INVALID_ENUM";
+    case GL_INVALID_VALUE: return "GL_INVALID_VALUE";
+    case GL_INVALID_OPERATION: return "GL_INVALID_OPERATION";
+    case GL_INVALID_FRAMEBUFFER_OPERATION: return "GL_INVALID_FRAMEBUFFER_OPERATION";
+    case GL_OUT_OF_MEMORY: return "GL_OUT_OF_MEMORY";
+#ifdef GL_STACK_UNDERFLOW
+    case GL_STACK_UNDERFLOW: return "GL_STACK_UNDERFLOW";
+#endif
+#ifdef GL_STACK_OVERFLOW
+    case GL_STACK_OVERFLOW: return "GL_STACK_OVERFLOW";
+#endif
+    default:
+        assert(!"unknown error");
+        return nullptr;
+    }
+}
 
 void glErrorCallback(const char *name, void *funcptr, int len_args, ...) {
     GLenum error_code;
     error_code = glad_glGetError();
     if (error_code != GL_NO_ERROR) {
-        fprintf(stderr, "ERROR %s in %s\n", gluErrorString(error_code), name);
+        fprintf(stderr, "ERROR %s in %s\n", getGlErrStr(error_code), name);
         assert(false);
     }
 }
