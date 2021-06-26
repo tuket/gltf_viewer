@@ -77,6 +77,13 @@ bool Splitter(bool split_vertically, float thickness, float* size1, float* size2
 i32 cgltfTypeNumComponents(cgltf_type type);
 GLenum cgltfComponentTypeToGl(cgltf_component_type type);
 GLenum cgltfPrimTypeToGl(cgltf_primitive_type type);
+inline const void* cgltfAccessAccessor(const cgltf_accessor& a, cgltf_size i)
+{
+    assert(i < a.count);
+    const char* bufferPtr = (char*)(a.buffer_view->buffer->data) + a.buffer_view->offset;
+    const char* bufferViewPtr = bufferPtr + a.offset + i * a.stride;
+    return (void*)bufferViewPtr;
+}
 
 const char* cgltfPrimitiveTypeStr(cgltf_primitive_type type);
 const char* cgltfTypeStr(cgltf_type type);
