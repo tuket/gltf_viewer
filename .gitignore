@@ -1,5 +1,5 @@
 build/
-data/
 *.txt.user
 *.trace
 *.autosave
+imgui.ini

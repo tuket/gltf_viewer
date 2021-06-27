@@ -11,9 +11,9 @@ namespace gpu
 
 namespace src
 {
-static const char version[] = "#version 330 core\n\n";
+static ConstStr version = "#version 330 core\n\n";
 
-static const char basicVertShader[] =
+static ConstStr basicVertShader =
 R"GLSL(
 uniform mat3 u_modelMat3;
 uniform mat4 u_modelViewProj;
@@ -47,7 +47,43 @@ void main()
 
 )GLSL";
 
-static const char pbrMetallic[] =
+static ConstStr skelletalVertShader =
+R"GLSL(
+#define MAX_BONES %d
+#define MAX_INFLUENCE_BONES %d
+uniform mat4 u_boneMtx[MAX_BONES];
+
+layout(location = 0) in vec3 a_pos;
+layout(location = 1) in vec3 a_normal;
+layout(location = 2) in vec3 a_tangent;
+layout(location = 3) in vec3 a_bitangent;
+layout(location = 4) in vec2 a_texCoord0;
+layout(location = 5) in vec2 a_texCoord1;
+layout(location = 6) in vec4 a_color;
+layout(location = 7) in uvec4 v_boneInds;
+layout(location = 8) in vec4 v_boneWeights;
+
+out vec3 v_normal;
+out vec3 v_tangent;
+out vec3 v_bitangent;
+out vec2 v_texCoord0;
+out vec2 v_texCoord1;
+out vec4 v_color;
+
+void main()
+{
+    gl_Position = u_modelViewProj * vec4(a_pos, 1.0);
+    v_normal = u_modelMat3 * a_normal;
+    v_tangent = u_modelMat3 * a_tangent;
+    v_bitangent = u_modelMat3 * a_bitangent;
+    v_texCoord0 = a_texCoord0;
+    v_texCoord1 = a_texCoord1;
+    v_color = u_color * a_color;
+}
+
+)GLSL";
+
+static ConstStr pbrMetallic =
 R"GLSL(
 layout(location = 0) out vec4 o_color;
 
@@ -79,7 +115,7 @@ void main()
 
 )GLSL";
 
-static const char vertColor_vert[] =
+static ConstStr vertColor_vert =
 R"GLSL(
 uniform mat4 u_modelViewProj;
 
@@ -95,7 +131,7 @@ void main()
 }
 )GLSL";
 
-static const char vertColor_frag[] =
+static ConstStr vertColor_frag =
 R"GLSL(
 layout(location = 0) out vec4 o_color;
 
@@ -107,7 +143,7 @@ void main()
 }
 )GLSL";
 
-static const char onlyPos_vert[] =
+static ConstStr onlyPos_vert =
 R"GLSL(
 uniform mat4 u_modelView;
 uniform mat4 u_modelViewProj;
@@ -122,7 +158,7 @@ void main()
 }
 )GLSL";
 
-static const char floorGrid_frag[] =
+static ConstStr floorGrid_frag =
 R"GLSL(
 layout (location = 0) out vec4 o_color;
 in vec3 v_camSpacePos;

@@ -43,7 +43,7 @@ constexpr size_t MAX_TEXTURES = 128;
 constexpr size_t MAX_MATERIALS = 128;
 constexpr size_t MAX_TOTAL_PRIMITIVES = 1023;
 constexpr u32 FLOOR_GRID_RESOLUTION = 50;
-constexpr u32 FLOOR_GRID_SUBDIVS = 8; 
+constexpr u32 FLOOR_GRID_SUBDIVS = 8;
 static const glm::vec4 BG_COLOR = {0.1f, 0.2f, 0.1f, 1.0f};
 
 namespace icons { // https://github.com/traverseda/OpenFontIcons
