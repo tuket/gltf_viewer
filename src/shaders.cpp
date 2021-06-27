@@ -50,7 +50,6 @@ void main()
 static ConstStr skelletalVertShader =
 R"GLSL(
 #define MAX_BONES %d
-#define MAX_INFLUENCE_BONES %d
 uniform mat4 u_boneMtx[MAX_BONES];
 
 layout(location = 0) in vec3 a_pos;

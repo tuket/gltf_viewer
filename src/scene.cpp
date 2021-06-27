@@ -1388,15 +1388,17 @@ static void drawGui_animations()
                     {
                         ImGui::Text("interpolation type: %s", cgltfInterpolationStr(sampler.interpolation));
                         ImGui::Text("Input compType: %s", cgltfComponentTypeStr(sampler.input->component_type));
-                        ImPlot::BeginPlot("", "t");
-                        AnimDataPlottingInfo info {&sampler};
-                        const i32 numComponents = cgltfTypeNumComponents(sampler.output->type);
-                        ConstStr axesStrs[] = {"x", "y", "z", "w"};
-                        if(numComponents <= 4) {
-                            for(i32 i = 0; i < numComponents; i++) {
-                                info.channel = i;
-                                ImPlot::PlotLineG(axesStrs[i], sampleAnimDataForPlotting, &info, sampler.input->count, 0);
-                                ImPlot::PlotScatterG(axesStrs[i], sampleAnimDataForPlotting, &info, sampler.input->count, 0);
+                        if(ImPlot::BeginPlot("", "t"))
+                        {
+                            AnimDataPlottingInfo info {&sampler};
+                            const i32 numComponents = cgltfTypeNumComponents(sampler.output->type);
+                            ConstStr axesStrs[] = {"x", "y", "z", "w"};
+                            if(numComponents <= 4) {
+                                for(i32 i = 0; i < numComponents; i++) {
+                                    info.channel = i;
+                                    ImPlot::PlotLineG(axesStrs[i], sampleAnimDataForPlotting, &info, sampler.input->count, 0);
+                                    ImPlot::PlotScatterG(axesStrs[i], sampleAnimDataForPlotting, &info, sampler.input->count, 0);
+                                }
                             }
                             ImPlot::EndPlot();
                         }
