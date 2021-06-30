@@ -112,8 +112,13 @@ void main()
     mat3 TBN = mat3(v_tangent, v_bitangent, v_normal);
     vec3 normal = TBN * texture(u_normalTexture, v_texCoord0).xyz;
     vec4 texColor = texture(u_colorTexture, v_texCoord0);
+    const float ambient = 0.3;
+    const float diffuseWrap = 0.3;
+    const float lightIntensity = 0.5;
+    vec3 lightDir = normalize(vec3(0.2, 1.0, 0.5));
+    float diffuseLight = ambient + lightIntensity * (diffuseWrap + dot(normal, lightDir)) / (1 + diffuseWrap);
     o_color = vec4(
-        dot(normal, normalize(vec3(0.2, 1.0, 0.5))) * mix(texColor.rgb * v_color.rgb, vec3(v_texCoord0, 0.0), 0.01),
+        diffuseLight * texColor.rgb * v_color.rgb,
         texColor.a * v_color.a
     );
     //o_color = vec4(v_texCoord0, 0.0, 1.0);
