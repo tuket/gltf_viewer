@@ -47,10 +47,13 @@ void main()
 
 )GLSL";
 
-static ConstStr skelletalVertShader =
+static ConstStr skinningVertShader =
 R"GLSL(
+uniform mat3 u_modelMat3;
+uniform mat4 u_modelViewProj;
+uniform vec4 u_color;
 #define MAX_BONES %d
-uniform mat4 u_boneMtx[MAX_BONES];
+uniform mat4 u_jointMatrices[MAX_BONES];
 
 layout(location = 0) in vec3 a_pos;
 layout(location = 1) in vec3 a_normal;
@@ -59,8 +62,8 @@ layout(location = 3) in vec3 a_bitangent;
 layout(location = 4) in vec2 a_texCoord0;
 layout(location = 5) in vec2 a_texCoord1;
 layout(location = 6) in vec4 a_color;
-layout(location = 7) in uvec4 v_boneInds;
-layout(location = 8) in vec4 v_boneWeights;
+layout(location = 7) in uvec4 a_jointInds;
+layout(location = 8) in vec4 a_jointWeights;
 
 out vec3 v_normal;
 out vec3 v_tangent;
@@ -71,7 +74,12 @@ out vec4 v_color;
 
 void main()
 {
-    gl_Position = u_modelViewProj * vec4(a_pos, 1.0);
+    mat4 skinMtx =
+        a_jointWeights[0] * u_jointMatrices[a_jointInds[0]] +
+        a_jointWeights[1] * u_jointMatrices[a_jointInds[1]];
+        a_jointWeights[2] * u_jointMatrices[a_jointInds[2]] +
+        a_jointWeights[3] * u_jointMatrices[a_jointInds[3]];
+    gl_Position = u_modelViewProj * skinMtx * vec4(a_pos, 1.0);
     v_normal = u_modelMat3 * a_normal;
     v_tangent = u_modelMat3 * a_tangent;
     v_bitangent = u_modelMat3 * a_bitangent;
@@ -190,7 +198,7 @@ void uploadShaderSources(u32 shader, const Ts&... xs)
 
 namespace sd
 {
-    static ShaderData pbrMetallic;
+    static ShaderData pbrMetallic[2]; // without/with skinning
     static ShaderData_VertColor vertColor;
     static ShaderData_FloorGrid floorGrid;
 }
@@ -209,15 +217,25 @@ void findAllUnifLocations(ShaderData& data)
 
 bool buildShaders()
 {
-    const u32 vertShader = glCreateShader(GL_VERTEX_SHADER);
-    uploadShaderSources(vertShader, src::version, src::basicVertShader);
-    glCompileShader(vertShader);
-    if(const char* errs = tg::getShaderCompileErrors(vertShader, infoLog)) {
-        tl::printError(errs);
-        return false;
+    u32 vertShader[2];
+    for(int skinning = 0; skinning < 2; skinning++) {
+        vertShader[skinning] = glCreateShader(GL_VERTEX_SHADER);
+        if(skinning) {
+            snprintf(scratchStr().begin(), scratchStr().size(), src::skinningVertShader, MAX_NUM_JOINTS);
+            uploadShaderSources(vertShader[skinning], src::version, scratchStr().begin());
+        }
+        else {
+            uploadShaderSources(vertShader[skinning], src::version, src::basicVertShader);
+        }
+        glCompileShader(vertShader[skinning]);
+        if(const char* errs = tg::getShaderCompileErrors(vertShader[skinning], infoLog)) {
+            tl::printError(errs);
+            return false;
+        }
     }
 
-    { // metallic
+    // metallic
+    for(int skinning = 0; skinning < 2; skinning++) {
         const u32 fragShader = glCreateShader(GL_FRAGMENT_SHADER);
         uploadShaderSources(fragShader, src::version, src::pbrMetallic);
         glCompileShader(fragShader);
@@ -226,9 +244,9 @@ bool buildShaders()
             return false;
         }
 
-        auto& data = sd::pbrMetallic;
+        auto& data = sd::pbrMetallic[skinning];
         data.prog = glCreateProgram();
-        glAttachShader(data.prog, vertShader);
+        glAttachShader(data.prog, vertShader[skinning]);
         glAttachShader(data.prog, fragShader);
         glLinkProgram(data.prog);
         if(const char* errs = tg::getShaderLinkErrors(data.prog, infoLog)) {
@@ -238,7 +256,8 @@ bool buildShaders()
             return false;
         }
         findAllUnifLocations(data);
-        glDetachShader(data.prog, vertShader);
+        data.unifLocs.jointMatrices = skinning ? glGetUniformLocation(data.prog, "u_jointMatrices") : -1;
+        glDetachShader(data.prog, vertShader[skinning]);
         glDetachShader(data.prog, fragShader);
         glDeleteShader(fragShader);
         glUseProgram(data.prog);
@@ -323,13 +342,14 @@ bool buildShaders()
         data.locs.distToFloor = glGetUniformLocation(data.prog, "u_distToFloor");
     }
 
-    glDeleteShader(vertShader);
+    for(int skinning = 0; skinning < 2; skinning++)
+        glDeleteShader(vertShader[skinning]);
     return true;
 }
 
-const ShaderData& shaderPbrMetallic()
+const ShaderData& shaderPbrMetallic(int skinning)
 {
-    return sd::pbrMetallic;
+    return sd::pbrMetallic[skinning];
 }
 
 const ShaderData& shaderPbrGloss()

@@ -10,7 +10,7 @@
 constexpr float PI = glm::pi<float>();
 typedef const char* const ConstStr;
 
-constexpr int MAX_NUM_BONES = 64;
+constexpr int MAX_NUM_JOINTS = 64;
 
 class ScratchBuffer {
 public:

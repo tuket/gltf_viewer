@@ -99,6 +99,7 @@ namespace anims
         vec3* scale;
     };
     static tl::Vector<NodeData> nodesData;
+    static tl::Vector<glm::mat4> nodesMatrices; // world transformation matrices for every node after animating
     static tl::Vector<float> animData;
     static tl::Vector<i32> curKeyInds; // the current key index foreach sampler, -1 means that we haven't reached the first frame yet
 }
@@ -351,6 +352,10 @@ static size_t getAnimSamplerInd(const cgltf_animation& anim, const cgltf_animati
     return (size_t)(sampler - anim.samplers);
 }
 
+static CSpan<cgltf_node> getNodes() {
+    return {parsedData->nodes, parsedData->nodes_count};
+}
+
 static const char* getCameraName(int ind) {
     if(ind < 0)
         return "[DEFAULT ORBIT]";
@@ -557,6 +562,37 @@ static void update(float dt)
         }
     }
 }
+}
+
+static void calcNodesMatricesRecursive(const cgltf_node& node, const glm::mat4& parentMat = glm::mat4(1.0))
+{
+    const i32 nodeInd = getNodeInd(&node);
+    const auto animData = anims::playingInd ? &anims::nodesData[nodeInd] : nullptr;
+    glm::mat4& mtx = anims::nodesMatrices[nodeInd];
+    mtx = parentMat;
+    if(node.has_matrix)
+        mtx *= glm::make_mat4(node.matrix);
+
+    if(animData && animData->position)
+        mtx *= glm::translate(glm::mat4(1), *animData->position);
+    else if(node.has_translation)
+        mtx *= glm::translate(glm::mat4(1), {node.translation[0], node.translation[1], node.translation[2]});
+
+    if(animData && animData->rotation)
+        mtx *= glm::toMat4(*animData->rotation);
+    else if(node.has_rotation)
+        mtx *= glm::toMat4(glm::quat(node.rotation[3], node.rotation[0], node.rotation[1], node.rotation[2]));
+
+    if(animData && animData->scale)
+        mtx *= glm::scale(glm::mat4(1), *animData->scale);
+    else if(node.has_scale)
+        mtx *= glm::scale(glm::mat4(1), vec3(node.scale[0], node.scale[1], node.scale[2]));
+
+    CSpan<cgltf_node*> children(node.children, node.children_count);
+    for(cgltf_node* child : children) {
+        assert(child);
+        calcNodesMatricesRecursive(*child, mtx);
+    }
 }
 
 static void imguiTexture(size_t textureInd, float* height)
@@ -770,28 +806,27 @@ static void drawSceneNodeRecursive(const cgltf_node& node, const glm::mat4& view
     const glm::mat4& parentMat = glm::mat4(1.0))
 {
     const i32 nodeInd = getNodeInd(&node);
-    const auto animData = anims::playingInd ? &anims::nodesData[nodeInd] : nullptr;
-    glm::mat4 modelMat = parentMat;
-    if(node.has_matrix)
-        modelMat *= glm::make_mat4(node.matrix);
-
-    if(animData && animData->position)
-        modelMat *= glm::translate(glm::mat4(1), *animData->position);
-    else if(node.has_translation)
-        modelMat *= glm::translate(glm::mat4(1), {node.translation[0], node.translation[1], node.translation[2]});
-
-    if(animData && animData->rotation)
-        modelMat *= glm::toMat4(*animData->rotation);
-    else if(node.has_rotation)
-        modelMat *= glm::toMat4(glm::quat(node.rotation[3], node.rotation[0], node.rotation[1], node.rotation[2]));
-
-    if(animData && animData->scale)
-        modelMat *= glm::scale(glm::mat4(1), *animData->scale);
-    else if(node.has_scale)
-        modelMat *= glm::scale(glm::mat4(1), vec3(node.scale[0], node.scale[1], node.scale[2]));
+    const glm::mat4& modelMat = anims::nodesMatrices[nodeInd];
 
     if(node.mesh)
     {
+        const int skinning = node.skin ? 1 : 0;
+        int numJoints = 0;
+        glm::mat4 jointMatrices[MAX_NUM_JOINTS];
+        if(node.skin) {
+            numJoints = node.skin->joints_count;
+            const glm::mat4 modelMatInv = glm::affineInverse(modelMat);
+            for(size_t i = 0; i < numJoints; i++) {
+                const cgltf_node& joint = *node.skin->joints[i];
+                const size_t jointNodeInd = getNodeInd(&joint);
+                const glm::mat4& invBindMtx = *(const glm::mat4*)cgltfAccessAccessor(*node.skin->inverse_bind_matrices, i);
+                jointMatrices[i] =
+                    modelMatInv *
+                    anims::nodesMatrices[jointNodeInd] *
+                    invBindMtx;
+            }
+        }
+
         const glm::mat3 modelMat3 = modelMat;
         const glm::mat4 modelViewProj = viewProj * modelMat;
         CSpan<cgltf_primitive> primitives(node.mesh->primitives, node.mesh->primitives_count);
@@ -806,7 +841,7 @@ static void drawSceneNodeRecursive(const cgltf_node& node, const glm::mat4& view
             {
                 glActiveTexture(GL_TEXTURE0 + (u32)ETexUnit::ALBEDO);
                 if(material.has_pbr_metallic_roughness) {
-                    glUniform4fv(gpu::shaderPbrMetallic().unifLocs.color,
+                    glUniform4fv(gpu::shaderPbrMetallic(skinning).unifLocs.color,
                                  1, material.pbr_metallic_roughness.base_color_factor);
                     if(auto tex = material.pbr_metallic_roughness.base_color_texture.texture)
                         glBindTexture(GL_TEXTURE_2D, gpu::textures[getTextureInd(tex)]);
@@ -840,11 +875,13 @@ static void drawSceneNodeRecursive(const cgltf_node& node, const glm::mat4& view
             {
                 glUniformMatrix4fv(shader.unifLocs.modelViewProj, 1, GL_FALSE, &modelViewProj[0][0]);
                 glUniformMatrix3fv(shader.unifLocs.modelMat3, 1, GL_FALSE, &modelMat3[0][0]);
+                if(skinning)
+                    glUniformMatrix4fv(shader.unifLocs.jointMatrices, numJoints, GL_FALSE, &jointMatrices[0][0][0]);
             };
 
             if(material.has_pbr_metallic_roughness)
             {
-                auto& shader = gpu::shaderPbrMetallic();
+                auto& shader = gpu::shaderPbrMetallic(skinning);
                 glUseProgram(shader.prog);
                 uploadCommonUniforms(shader);
                 draw();
@@ -946,7 +983,15 @@ static void drawOrbitCenterCrosshair(const glm::mat4& viewProj)
 
 void update(float dt)
 {
+    if(!parsedData)
+        return;
+
     anims::update(dt);
+
+    anims::nodesMatrices.resize(parsedData->nodes_count);
+    for(const cgltf_node& node : getNodes())
+        if(node.parent == nullptr)
+            calcNodesMatricesRecursive(node);
 }
 
 void drawScene()
@@ -962,8 +1007,7 @@ void drawScene()
     const glm::mat4 viewMat = tg::calcOrbitCameraMtx(orbitCam.center, orbitCam.heading, orbitCam.pitch, orbitCam.distance);
     const glm::mat4 projMat = glm::perspective(camProjInfo.fovY, (float)w / h, camProjInfo.nearDist, camProjInfo.farDist);
     const glm::mat4 viewProj = projMat * viewMat;
-    CSpan<cgltf_node> nodes(parsedData->nodes, parsedData->nodes_count);
-    for(const cgltf_node& node : nodes)
+    for(const cgltf_node& node : getNodes())
         if(node.parent == nullptr)
             drawSceneNodeRecursive(node, viewProj);
 
@@ -978,7 +1022,7 @@ void drawScene()
     drawOrbitCenterCrosshair(viewProj);
 }
 
-static void sceneNodeGuiRecusive(cgltf_node* node)
+static void sceneNodeGuiRecursive(cgltf_node* node)
 {
     ImGuiTreeNodeFlags flags = 0;
     if(selectedNode == node)
@@ -989,14 +1033,14 @@ static void sceneNodeGuiRecusive(cgltf_node* node)
         if(ImGui::TreeNodeEx((void*)node, flags, "%s", node->name))
         {
             if(ImGui::IsItemClicked())
-                    selectedNode = node;
+                selectedNode = node;
             for(size_t i = 0; i < node->children_count; i++)
-                sceneNodeGuiRecusive(node->children[i]);
+                sceneNodeGuiRecursive(node->children[i]);
             ImGui::TreePop();
         }
         else {
             if(ImGui::IsItemClicked())
-                    selectedNode = node;
+                selectedNode = node;
         }
 
     }
@@ -1043,7 +1087,7 @@ static void drawGui_scenesTab()
         const cgltf_scene& selectedScene = parsedData->scenes[imgui_state::selectedSceneInd];
         for(size_t nodeInd = 0; nodeInd < selectedScene.nodes_count; nodeInd++)
             if(selectedScene.nodes[nodeInd]->parent == nullptr)
-                sceneNodeGuiRecusive(selectedScene.nodes[nodeInd]);
+                sceneNodeGuiRecursive(selectedScene.nodes[nodeInd]);
     }
     ImGui::EndChild();
 
@@ -1052,7 +1096,7 @@ static void drawGui_scenesTab()
     if(selectedNode) {
         ImGui::Text("Node index: %ld", getNodeInd(selectedNode));
         if(selectedNode->skin) {
-            ImGui::Text("Skin: %ld", getSkinInd(selectedNode->skin));
+            ImGui::Text("Skin: %s(%ld)", selectedNode->skin->name, getSkinInd(selectedNode->skin));
         }
         if(selectedNode->mesh) {
             ImGui::Text("Mesh: %ld", getMeshInd(selectedNode->mesh));
@@ -1303,7 +1347,7 @@ static void drawGui_skins()
                     auto joint = joints[j];
                     if(joint == skin.skeleton)
                         ImGui::PushStyleColor(ImGuiCol_Text, 0xFF0000FF);
-                    ImGui::Text("%ld) Node -> %ld) %s", j, getNodeInd(joint), (joint->name ? joint->name : ""));
+                    ImGui::Text("%ld) %ld %s", j, getNodeInd(joint), (joint->name ? joint->name : ""));
                     if(joint == skin.skeleton)
                         ImGui::PopStyleColor();
                 }
@@ -1717,8 +1761,16 @@ static void createVaos()
                 const size_t offset = accessor->offset + accessor->buffer_view->offset;
                 const u32 vbo = gpu::bos[getBufferInd(accessor->buffer_view->buffer)];
                 glBindBuffer(GL_ARRAY_BUFFER, vbo);
-                glVertexAttribPointer(attribId, numComponents, componentType,
-                    (u8)accessor->normalized, accessor->stride, (void*)offset);
+                if(componentType == GL_INT || componentType == GL_UNSIGNED_INT ||
+                    componentType == GL_SHORT || componentType == GL_UNSIGNED_SHORT ||
+                    componentType == GL_BYTE || componentType == GL_UNSIGNED_BYTE) {
+                    glVertexAttribIPointer(attribId, numComponents, componentType,
+                        accessor->stride, (void*)offset);
+                }
+                else {
+                    glVertexAttribPointer(attribId, numComponents, componentType,
+                        (u8)accessor->normalized, accessor->stride, (void*)offset);
+                }
                 attribIdToInd[attribId] = (u8)attribInd;
             }
             assert((availableAttribsMask & (1U << (u32)EAttrib::POSITION)) &&

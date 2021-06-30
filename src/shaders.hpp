@@ -7,7 +7,8 @@ struct UniformLocations {
         modelMat3,
         color,
         colorTexture,
-        normalTexture;
+        normalTexture,
+        jointMatrices;
 };
 
 struct ShaderData {
@@ -37,7 +38,7 @@ namespace gpu
 
 bool buildShaders();
 
-const ShaderData& shaderPbrMetallic();
+const ShaderData& shaderPbrMetallic(int skinning);
 const ShaderData& shaderPbrGloss();
 const ShaderData_VertColor& shaderVertColor();
 const ShaderData_FloorGrid& shaderFloorGrid();
