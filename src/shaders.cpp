@@ -76,13 +76,14 @@ void main()
 {
     mat4 skinMtx =
         a_jointWeights[0] * u_jointMatrices[a_jointInds[0]] +
-        a_jointWeights[1] * u_jointMatrices[a_jointInds[1]];
+        a_jointWeights[1] * u_jointMatrices[a_jointInds[1]] +
         a_jointWeights[2] * u_jointMatrices[a_jointInds[2]] +
         a_jointWeights[3] * u_jointMatrices[a_jointInds[3]];
     gl_Position = u_modelViewProj * skinMtx * vec4(a_pos, 1.0);
-    v_normal = u_modelMat3 * a_normal;
-    v_tangent = u_modelMat3 * a_tangent;
-    v_bitangent = u_modelMat3 * a_bitangent;
+    mat3 modelSkin3 = u_modelMat3 * mat3(skinMtx);
+    v_normal = modelSkin3 * a_normal;
+    v_tangent = modelSkin3 * a_tangent;
+    v_bitangent = modelSkin3 * a_bitangent;
     v_texCoord0 = a_texCoord0;
     v_texCoord1 = a_texCoord1;
     v_color = u_color * a_color;
